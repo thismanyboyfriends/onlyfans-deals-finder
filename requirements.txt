@@ -1,0 +1,8 @@
+requests
+requests_toolbelt
+pygments
+colorlog
+backoff
+enlighten
+selenium
+chromedriver
