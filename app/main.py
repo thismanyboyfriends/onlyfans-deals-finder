@@ -1,7 +1,8 @@
-import csv
 import logging
 import os
 import enlighten
+from selenium.common import TimeoutException
+
 import page_scraper
 from pathlib import Path
 
@@ -19,7 +20,6 @@ account_list: Path = script_dir / "input" / "account_list.txt"
 
 MAX_PROFILE_LIMIT = 1000
 
-
 def main() -> None:
     logger.info("===== OF_INFO_SCRAPER =====")
 
@@ -36,14 +36,19 @@ def main() -> None:
 
         try:
             page_info = page_scraper.scrape_page(of_profile_name)
-        except TimeoutError as e:
-            logger.error("could not scrape page %s", of_profile_name)
+        except TimeoutException as e:
+            logger.error(f"{of_profile_name}: timed out! Could not scrape page")
+            pbar.update()
+            continue
+        except page_scraper.PageNotAvailableError as e:
+            logger.error(f"{of_profile_name}: Not available anymore!")
+            pbar.update()
             continue
 
-        # logger.info(f"{of_profile_name}: Finished!")
-
         if page_info["offer"] == "FREE_TRIAL":
-            logger.info(f"Found free trial! {page_info["url"]}")
+            logger.info(f"{of_profile_name}: Found free trial -- {page_info["url"]}")
+
+        logger.info(f"{of_profile_name}: scraped!")
 
         pbar.update()
         output.add_scraped_info(page_info)
