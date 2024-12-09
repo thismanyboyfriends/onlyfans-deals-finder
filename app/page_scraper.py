@@ -43,19 +43,16 @@ def scrape_page(of_username: str) -> dict[str, str]:
     offer = get_offer(price_element.text)
     price = get_price(price_element.text, offer)
     subscribed = get_subscribed(price_element.text)
-    lists = driver.find_elements(By.CSS_SELECTOR, PROFILE_LIST_SELECTOR)
     avatar = driver.find_element(By.CSS_SELECTOR, PROFILE_PIC_SELECTOR)
 
     user_info = {
         "url": url,
         "username": of_username,
         "display_name": display_name,
-        # "bio": bio,
         "subscribed": subscribed,
         "price": price,
         "offer": offer,
         "avatar_url": avatar.get_property("src"),
-        "lists": lists,
     }
 
     return user_info

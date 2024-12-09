@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
 account_list: Path = script_dir / "input" / "account_list.txt"
 
-MAX_PROFILE_LIMIT = 30
+MAX_PROFILE_LIMIT = 1000
+
 
 def main() -> None:
     logger.info("===== OF_INFO_SCRAPER =====")
@@ -27,8 +28,6 @@ def main() -> None:
 
     manager = enlighten.get_manager()
     pbar = manager.counter(total=(len(of_profile_names)), desc='OnlyFans Profiles', unit='profiles')
-
-    profile_info_scraped: list[dict[str, str]] = []
 
     current_profiles_scraped: int = 0
     output.create_output_file()
@@ -41,7 +40,11 @@ def main() -> None:
             logger.error("could not scrape page %s", of_profile_name)
             continue
 
-        logger.info(f"{of_profile_name}: Finished!")
+        # logger.info(f"{of_profile_name}: Finished!")
+
+        if page_info["offer"] == "FREE_TRIAL":
+            logger.info(f"Found free trial! {page_info["url"]}")
+
         pbar.update()
         output.add_scraped_info(page_info)
         current_profiles_scraped += 1
@@ -50,15 +53,12 @@ def main() -> None:
 
     page_scraper.close_driver()
 
-    logger.info(f"Processed {len(profile_info_scraped)} users!")
+    logger.info(f"Processed {len(of_profile_names)} users!")
 
 
 def read_file_to_list(filename: Path) -> list[str]:
     with open(filename, 'r') as file:
         return file.read().splitlines()
-
-
-
 
 
 if __name__ == "__main__":
