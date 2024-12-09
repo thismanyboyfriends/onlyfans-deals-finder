@@ -1,4 +1,5 @@
-from time import sleep
+import random
+import time
 
 from selenium import webdriver
 from selenium.webdriver.remote.webelement import WebElement
@@ -9,7 +10,7 @@ from selenium.webdriver.common.by import By
 options = webdriver.ChromeOptions()
 options.add_argument("start-maximized")
 options.add_argument("incognito")
-# options.add_argument("headless")
+options.add_argument("headless")
 options.add_argument("disable-extensions")
 options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
 # driver = uc.Chrome(options=options)
@@ -26,8 +27,6 @@ class PriceNotFoundError(Exception):
 
 class PageNotAvailableError(Exception):
     pass
-
-
 
 
 def scrape_page(of_username: str) -> dict[str, str]:
@@ -53,10 +52,15 @@ def scrape_page(of_username: str) -> dict[str, str]:
     return user_info
 
 
-def wait_until_page_loads():
-    sleep(2)
+def unpredictable_wait():
+    random_wait = random.uniform(1, 5)
+    time.sleep(random_wait)
 
-    WebDriverWait(driver, 10).until(
+
+def wait_until_page_loads():
+    unpredictable_wait()
+
+    WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "div.g-avatar__img-wrapper"))
     )
 
@@ -68,6 +72,7 @@ def throw_error_if_404():
         raise PageNotAvailableError
 
     return
+
 
 def get_price_element() -> WebElement:
     elements = driver.find_elements(By.CSS_SELECTOR, "div.b-offer-join")
