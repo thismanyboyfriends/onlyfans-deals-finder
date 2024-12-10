@@ -5,7 +5,7 @@ from pathlib import Path
 script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
 output_file: Path = script_dir / "output" / "output.csv"
 
-headers = ["username", "display_name", "url", "offer", "price", "avatar_url"]
+headers = ["username", "display_name", "url", "offer", "price", "lists", "avatar_url"]
 
 
 def create_output_file():

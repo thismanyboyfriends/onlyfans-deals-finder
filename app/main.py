@@ -20,6 +20,7 @@ account_list: Path = script_dir / "input" / "account_list.txt"
 
 MAX_PROFILE_LIMIT = 1000
 
+
 def main() -> None:
     logger.info("===== OF_INFO_SCRAPER =====")
 

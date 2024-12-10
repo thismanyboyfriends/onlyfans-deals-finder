@@ -31,6 +31,9 @@ class PageNotAvailableError(Exception):
     pass
 
 
+
+
+
 def scrape_page(of_username: str) -> dict[str, str]:
     url = BASE_URL.format(of_username)
     driver.get(url)
@@ -38,19 +41,32 @@ def scrape_page(of_username: str) -> dict[str, str]:
     wait_until_page_loads()
     throw_error_if_404()
 
-    price_element = get_price_element()
+    price_element_text: str = get_price_element_text()
     bio = driver.find_element(By.CSS_SELECTOR, "div.b-user-info__text").text
+    offer = get_offer(price_element_text)
+    price = get_price(price_element_text, offer)
+    avatar_url = get_avatar_url()
+    lists = get_lists()
 
     user_info = {
         "url": url,
         "username": of_username,
-        "display_name": driver.find_element(By.CLASS_NAME, "g-user-name").text,
-        "price": (get_price(price_element.text, get_offer(price_element.text))),
-        "offer": (get_offer(price_element.text)),
-        "avatar_url": (driver.find_element(By.CSS_SELECTOR, "a.g-avatar img").get_property("src")),
+        "display_name": get_display_name(),
+        "price": price,
+        "offer": offer,
+        "lists": " ".join(lists),
+        "avatar_url": avatar_url,
     }
 
     return user_info
+
+
+def get_avatar_url():
+    return driver.find_element(By.CSS_SELECTOR, "a.g-avatar img").get_property("src")
+
+
+def get_display_name():
+    return driver.find_elements(By.CSS_SELECTOR, "div.g-user-name")[1].text
 
 
 def unpredictable_wait():
@@ -75,8 +91,14 @@ def throw_error_if_404():
     return
 
 
-def get_price_element() -> WebElement:
-    return driver.find_elements(By.CSS_SELECTOR, "div.b-offer-wrapper")[0].find_element(By.CSS_SELECTOR, "div.m-rounded")
+def get_price_element_text() -> str:
+    return driver.find_elements(By.CSS_SELECTOR, "div.b-offer-wrapper")[0].find_element(By.CSS_SELECTOR, "div.m-rounded").text
+
+
+def get_lists() -> list[str]:
+    lists_elements = driver.find_elements(By.CSS_SELECTOR, "span.b-list-titles__item__text")
+    return [element.text for element in lists_elements]
+
 
 
 def get_price(price_text: str, offer: str) -> str:
