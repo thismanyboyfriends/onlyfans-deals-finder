@@ -7,4 +7,4 @@ enlighten
 selenium
 chromedriver
 undetected-chromedriver
-distutils
+price-parser

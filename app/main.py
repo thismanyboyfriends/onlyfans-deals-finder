@@ -44,6 +44,8 @@ def main() -> None:
             logger.error(f"{of_profile_name}: Not available anymore!")
             pbar.update()
             continue
+        except AttributeError:
+            logger.error(f"{of_profile_name}: No price info!")
 
         if page_info["offer"] == "FREE_TRIAL":
             logger.info(f"{of_profile_name}: Found free trial -- {page_info["url"]}")

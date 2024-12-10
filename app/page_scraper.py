@@ -6,13 +6,15 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from price_parser import Price
 
 options = webdriver.ChromeOptions()
 options.add_argument("start-maximized")
 options.add_argument("incognito")
-options.add_argument("headless")
+# options.add_argument("headless")
 options.add_argument("disable-extensions")
-options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
+options.add_experimental_option("debuggerAddress", "localhost:9222")
+# options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
 # driver = uc.Chrome(options=options)
 driver = webdriver.Chrome(options=options)
 
@@ -43,7 +45,6 @@ def scrape_page(of_username: str) -> dict[str, str]:
         "url": url,
         "username": of_username,
         "display_name": driver.find_element(By.CLASS_NAME, "g-user-name").text,
-        "subscribed": (get_subscribed(price_element.text)),
         "price": (get_price(price_element.text, get_offer(price_element.text))),
         "offer": (get_offer(price_element.text)),
         "avatar_url": (driver.find_element(By.CSS_SELECTOR, "a.g-avatar img").get_property("src")),
@@ -75,19 +76,20 @@ def throw_error_if_404():
 
 
 def get_price_element() -> WebElement:
-    elements = driver.find_elements(By.CSS_SELECTOR, "div.b-offer-join")
-    return next((element for element in elements if "SUBSCRIBE" in element.text), None)
+    return driver.find_elements(By.CSS_SELECTOR, "div.b-offer-wrapper")[0].find_element(By.CSS_SELECTOR, "div.m-rounded")
 
 
 def get_price(price_text: str, offer: str) -> str:
     if offer == "FREE" or offer == "FREE_TRIAL" or offer == "SUBSCRIBED":
-        return "0"
+        price = "$0"
     elif offer == "NO_OFFER":
-        return price_text.split()[1]
+        price = price_text.split()[1]
     elif offer == "OFFER":
-        return price_text.split()[-2]
+        price = price_text.split()[-2]
     else:
         raise PriceNotFoundError
+
+    return standardize_price(price)
 
 
 def get_offer(price_text: str) -> str:
@@ -105,9 +107,10 @@ def get_offer(price_text: str) -> str:
         raise PriceNotFoundError
 
 
-def get_subscribed(price_text: str) -> bool:
-    return "subscribed" in price_text
-
-
 def close_driver() -> None:
     driver.quit()
+
+
+def standardize_price(price_string: str) -> str:
+    parsed_price = Price.fromstring(price_string)
+    return str(parsed_price.amount)
