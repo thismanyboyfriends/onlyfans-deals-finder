@@ -2,7 +2,6 @@ import random
 import time
 
 from selenium import webdriver
-from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -31,9 +30,6 @@ class PageNotAvailableError(Exception):
     pass
 
 
-
-
-
 def scrape_page(of_username: str) -> dict[str, str]:
     url = BASE_URL.format(of_username)
     driver.get(url)
@@ -42,7 +38,11 @@ def scrape_page(of_username: str) -> dict[str, str]:
     throw_error_if_404()
 
     price_element_text: str = get_price_element_text()
-    bio = driver.find_element(By.CSS_SELECTOR, "div.b-user-info__text").text
+
+    if price_element_text == "":
+        raise PriceNotFoundError
+
+    # bio = driver.find_element(By.CSS_SELECTOR, "div.b-user-info__text").text
     offer = get_offer(price_element_text)
     price = get_price(price_element_text, offer)
     avatar_url = get_avatar_url()
@@ -92,7 +92,11 @@ def throw_error_if_404():
 
 
 def get_price_element_text() -> str:
-    return driver.find_elements(By.CSS_SELECTOR, "div.b-offer-wrapper")[0].find_element(By.CSS_SELECTOR, "div.m-rounded").text
+    elements = driver.find_elements(By.CSS_SELECTOR, "div.b-offer-wrapper")
+    if len(elements) > 0:
+        return elements[0].find_element(By.CSS_SELECTOR, "div.m-rounded").text
+    else:
+        return ""
 
 
 def get_lists() -> list[str]:
@@ -107,7 +111,7 @@ def get_price(price_text: str, offer: str) -> str:
     elif offer == "NO_OFFER":
         price = price_text.split()[1]
     elif offer == "OFFER":
-        price = price_text.split()[-2]
+        price = price_text.split()[-4]
     else:
         raise PriceNotFoundError
 

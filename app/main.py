@@ -34,9 +34,15 @@ def main() -> None:
     output.create_output_file()
 
     for of_profile_name in of_profile_names:
-
         try:
             page_info = page_scraper.scrape_page(of_profile_name)
+            logger.info(f"{of_profile_name}: scraped!")
+
+            pbar.update()
+            output.add_scraped_info(page_info)
+            current_profiles_scraped += 1
+            if current_profiles_scraped >= MAX_PROFILE_LIMIT:
+                break
         except TimeoutException as e:
             logger.error(f"{of_profile_name}: timed out! Could not scrape page")
             pbar.update()
@@ -45,19 +51,12 @@ def main() -> None:
             logger.error(f"{of_profile_name}: Not available anymore!")
             pbar.update()
             continue
-        except AttributeError:
+        except IndexError:
             logger.error(f"{of_profile_name}: No price info!")
-
-        if page_info["offer"] == "FREE_TRIAL":
-            logger.info(f"{of_profile_name}: Found free trial -- {page_info["url"]}")
-
-        logger.info(f"{of_profile_name}: scraped!")
-
-        pbar.update()
-        output.add_scraped_info(page_info)
-        current_profiles_scraped += 1
-        if current_profiles_scraped >= MAX_PROFILE_LIMIT:
-            break
+            pbar.update()
+            continue
+        except Exception:
+            logger.error(f"{of_profile_name}: Unknown error")
 
     page_scraper.close_driver()
 
