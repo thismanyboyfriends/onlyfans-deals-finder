@@ -6,7 +6,7 @@ from selenium.common import TimeoutException
 import page_scraper
 from pathlib import Path
 
-from app import output
+import output, list_scraper
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
@@ -24,15 +24,22 @@ MAX_PROFILE_LIMIT = 1000
 def main() -> None:
     logger.info("===== OF_INFO_SCRAPER =====")
 
+    scrape_from_list_page()
+
+
+#    scrape_individual_pages()
+
+def scrape_from_list_page():
+    user_info_list = list_scraper.scrape_list(1052921466)
+    print(user_info_list)
+
+def scrape_individual_pages():
     of_profile_names: list[str] = read_file_to_list(account_list)
     logger.info(f"Found {len(of_profile_names)} onlyfans profiles")
-
     manager = enlighten.get_manager()
     pbar = manager.counter(total=(len(of_profile_names)), desc='OnlyFans Profiles', unit='profiles')
-
     current_profiles_scraped: int = 0
     output.create_output_file()
-
     for of_profile_name in of_profile_names:
         try:
             page_info = page_scraper.scrape_page(of_profile_name)
@@ -57,9 +64,7 @@ def main() -> None:
             continue
         except Exception:
             logger.error(f"{of_profile_name}: Unknown error")
-
     page_scraper.close_driver()
-
     logger.info(f"Processed {len(of_profile_names)} users!")
 
 
