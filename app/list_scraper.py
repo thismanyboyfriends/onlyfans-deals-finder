@@ -1,12 +1,14 @@
-import random
+import logging
 import time
+from typing import Optional
 
-from selenium import webdriver
-from selenium.webdriver.remote.webelement import WebElement
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from price_parser import Price
+from selenium import webdriver
+from selenium.common import NoSuchElementException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 options = webdriver.ChromeOptions()
 options.add_argument("start-maximized")
@@ -22,39 +24,72 @@ BASE_URL = "https://onlyfans.com/my/collections/user-lists/{}"
 PROFILE_LIST_SELECTOR = "span.b-list-titles__item__text"
 
 
-class PriceNotFoundError(Exception):
-    pass
-
-
 def get_user_elements() -> list[WebElement]:
     return driver.find_elements(By.CSS_SELECTOR, "div.b-users__item")
 
 
-def scrape_list(list_id: int) -> list[dict[str, str]]:
-    url = BASE_URL.format(list_id)
-    driver.get(url)
-    user_info_list: list[dict[str, str]] = []
-
-    wait_until_page_loads()
-
+def scrape_user_info() -> dict:
     user_elements = get_user_elements()
+    user_info_dict: dict[str, dict] = {}
 
     for user_element in user_elements:
+        user_info = scrape_info(user_element)
+        if user_info:
+            username = user_info["username"]
+            if username:
+                logging.info(f"scraped user {username}")
+                user_info_dict[username] = user_info
 
-        username: str = user_element.find_element(By.CSS_SELECTOR, "div.g-user-username").text
-        price_element_text: str = user_element.find_element(By.CSS_SELECTOR, ".b-wrap-btn-text").text
+    return user_info_dict
 
-        if price_element_text == "":
-            raise PriceNotFoundError
 
-        user_info = {
-            "username": username,
-            "price": price_element_text
-        }
+def scrape_list(list_id: int) -> dict[str, dict[str, str]]:
+    url = BASE_URL.format(list_id)
+    driver.get(url)
+    wait_until_page_loads()
+    user_info_dict: dict[str, dict] = {}
 
-        user_info_list.append(user_info)
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    while True:
 
-    return user_info_list
+        scroll_to_bottom()
+        time.sleep(4)
+
+        # Calculate new scroll height and compare with last scroll height
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            break
+
+        old_size = len(user_info_dict)
+        user_info_dict |= scrape_user_info()
+        new_size = len(user_info_dict)
+        logging.info(f"scraped {new_size} users")
+
+        if old_size == new_size:
+            break
+
+    return user_info_dict
+
+
+def scroll_to_bottom():
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+
+def scrape_info(user_element) -> Optional[dict]:
+    username: str = user_element.find_element(By.CSS_SELECTOR, "div.g-user-username").text
+    price_element_text: str = get_price_text(user_element)
+
+    return {
+        "username": username,
+        "price": price_element_text
+    }
+
+
+def get_price_text(user_element):
+    try:
+        return user_element.find_element(By.CSS_SELECTOR, ".b-wrap-btn-text").text
+    except NoSuchElementException:
+        return "No Price Info"
 
 
 def get_avatar_url():

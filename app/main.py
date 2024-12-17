@@ -18,20 +18,19 @@ logger = logging.getLogger(__name__)
 script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
 account_list: Path = script_dir / "input" / "account_list.txt"
 
-MAX_PROFILE_LIMIT = 1000
-
 
 def main() -> None:
     logger.info("===== OF_INFO_SCRAPER =====")
 
-    scrape_from_list_page()
+    scraped_info: dict[str, dict[str, str]] = list_scraper.scrape_list(880876135)
 
+    headers = output.derive_headers(scraped_info)
 
-#    scrape_individual_pages()
+    output.create_output_file(headers)
 
-def scrape_from_list_page():
-    user_info_list = list_scraper.scrape_list(1052921466)
-    print(user_info_list)
+    for key, value in scraped_info.items():
+        output.add_scraped_info(value, headers)
+
 
 def scrape_individual_pages():
     of_profile_names: list[str] = read_file_to_list(account_list)
@@ -39,17 +38,15 @@ def scrape_individual_pages():
     manager = enlighten.get_manager()
     pbar = manager.counter(total=(len(of_profile_names)), desc='OnlyFans Profiles', unit='profiles')
     current_profiles_scraped: int = 0
-    output.create_output_file()
+    headers = ["username", "display_name", "url", "offer", "price", "lists", "avatar_url"]
+    output.create_output_file(headers)
     for of_profile_name in of_profile_names:
         try:
             page_info = page_scraper.scrape_page(of_profile_name)
             logger.info(f"{of_profile_name}: scraped!")
 
             pbar.update()
-            output.add_scraped_info(page_info)
-            current_profiles_scraped += 1
-            if current_profiles_scraped >= MAX_PROFILE_LIMIT:
-                break
+            output.add_scraped_info(page_info, headers)
         except TimeoutException as e:
             logger.error(f"{of_profile_name}: timed out! Could not scrape page")
             pbar.update()
