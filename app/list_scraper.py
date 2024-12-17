@@ -79,17 +79,26 @@ def scrape_info(user_element) -> Optional[dict]:
     username: str = user_element.find_element(By.CSS_SELECTOR, "div.g-user-username").text
     price_element_text: str = get_price_text(user_element)
 
-    return {
-        "username": username,
-        "price": price_element_text
-    }
+    if price_element_text == "":
+
+        return {
+            "username": username,
+            "price": "?",
+            "subscription_status": "?"
+        }
+    else:
+        return {
+            "username": username,
+            "subscription_status": price_element_text.split("\n")[0],
+            "price": price_element_text.split("\n")[1],
+        }
 
 
 def get_price_text(user_element):
     try:
         return user_element.find_element(By.CSS_SELECTOR, ".b-wrap-btn-text").text
     except NoSuchElementException:
-        return "No Price Info"
+        return ""
 
 
 def get_avatar_url():
