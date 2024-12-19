@@ -1,9 +1,6 @@
 import logging
 import os
-import enlighten
-from selenium.common import TimeoutException
 
-import page_scraper
 from pathlib import Path
 
 import output, list_scraper
@@ -20,54 +17,10 @@ account_list: Path = script_dir / "input" / "account_list.txt"
 
 
 def main() -> None:
-    logger.info("===== OF_INFO_SCRAPER =====")
+    logger.info("===== ONLYFANS_LIST_PRICE_SCRAPER =====")
 
     scraped_info: dict[str, dict[str, str]] = list_scraper.scrape_list(880876135)
-
-    headers = output.derive_headers(scraped_info)
-
-    output.create_output_file(headers)
-
-    for key, value in scraped_info.items():
-        output.add_scraped_info(value, headers)
-
-
-def scrape_individual_pages():
-    of_profile_names: list[str] = read_file_to_list(account_list)
-    logger.info(f"Found {len(of_profile_names)} onlyfans profiles")
-    manager = enlighten.get_manager()
-    pbar = manager.counter(total=(len(of_profile_names)), desc='OnlyFans Profiles', unit='profiles')
-    current_profiles_scraped: int = 0
-    headers = ["username", "display_name", "url", "offer", "price", "lists", "avatar_url"]
-    output.create_output_file(headers)
-    for of_profile_name in of_profile_names:
-        try:
-            page_info = page_scraper.scrape_page(of_profile_name)
-            logger.info(f"{of_profile_name}: scraped!")
-
-            pbar.update()
-            output.add_scraped_info(page_info, headers)
-        except TimeoutException as e:
-            logger.error(f"{of_profile_name}: timed out! Could not scrape page")
-            pbar.update()
-            continue
-        except page_scraper.PageNotAvailableError as e:
-            logger.error(f"{of_profile_name}: Not available anymore!")
-            pbar.update()
-            continue
-        except IndexError:
-            logger.error(f"{of_profile_name}: No price info!")
-            pbar.update()
-            continue
-        except Exception:
-            logger.error(f"{of_profile_name}: Unknown error")
-    page_scraper.close_driver()
-    logger.info(f"Processed {len(of_profile_names)} users!")
-
-
-def read_file_to_list(filename: Path) -> list[str]:
-    with open(filename, 'r') as file:
-        return file.read().splitlines()
+    output.write_output_file(scraped_info)
 
 
 if __name__ == "__main__":

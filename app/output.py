@@ -1,9 +1,11 @@
 import csv
 import os
 from pathlib import Path
+from datetime import date
 
+current_date = date.today().strftime("%Y-%m-%d")
 script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-output_file: Path = script_dir / "output" / "output.csv"
+output_file: Path = script_dir / "output" / f"output-{current_date}.csv"
 
 
 def derive_headers(scraped_info: dict[str, dict[str, str]]):
@@ -11,7 +13,10 @@ def derive_headers(scraped_info: dict[str, dict[str, str]]):
     return first_value.keys()
 
 
-def create_output_file(headers: list[str]):
+def write_output_file(data: dict[str, dict[str, str]]):
+
+    headers = derive_headers(data)
+
     if output_file.exists():
         os.remove(output_file)
 
@@ -19,12 +24,5 @@ def create_output_file(headers: list[str]):
         writer = csv.DictWriter(file, fieldnames=headers)
         writer.writeheader()
 
-
-def add_scraped_info(data: dict[str, str], headers: list[str]) -> None:
-    # Write the data to the CSV file
-    with open(output_file, mode="a", newline="", encoding="utf-8") as file:
-        # Create a DictWriter object
-        writer = csv.DictWriter(file, fieldnames=headers)
-
-        # Write the rows
-        writer.writerow(data)
+        for key, value in data.items():
+            writer.writerow(value)
