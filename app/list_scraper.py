@@ -33,11 +33,14 @@ def scrape_user_info() -> dict:
     user_info_dict: dict[str, dict] = {}
 
     for user_element in user_elements:
+        if user_element.text == "":
+            continue
         user_info = scrape_info(user_element)
         if user_info:
             username = user_info["username"]
             if username:
                 logging.info(f"scraped user {username}")
+                logging.info(f"details: {user_info}")
                 user_info_dict[username] = user_info
 
     return user_info_dict
@@ -78,23 +81,29 @@ def scroll_to_bottom():
 def scrape_info(user_element) -> Optional[dict]:
     username: str = user_element.find_element(By.CSS_SELECTOR, "div.g-user-username").text
     price_element_text: str = get_price_text(user_element)
+    lists_text: list[str] = get_lists(user_element)
 
     if price_element_text == "":
-
-        return {
-            "username": username,
-            "price": "?",
-            "subscription_status": "?"
-        }
+        return unknown_user_info(username)
     else:
+        split = price_element_text.split("\n")
         return {
             "username": username,
-            "subscription_status": price_element_text.split("\n")[0],
-            "price": price_element_text.split("\n")[1],
+            "subscription_status": split[0],
+            "price": split[1],
+            "lists": lists_text
         }
 
 
-def get_price_text(user_element):
+def unknown_user_info(username):
+    return {
+        "username": username,
+        "price": "?",
+        "subscription_status": "?"
+    }
+
+
+def get_price_text(user_element: WebElement):
     try:
         return user_element.find_element(By.CSS_SELECTOR, ".b-wrap-btn-text").text
     except NoSuchElementException:
@@ -117,9 +126,15 @@ def wait_until_page_loads():
     )
 
 
-def get_lists() -> list[str]:
-    lists_elements = driver.find_elements(By.CSS_SELECTOR, "span.b-list-titles__item__text")
-    return [element.text for element in lists_elements]
+def get_lists(user_element: WebElement) -> list[str]:
+    lists_elements = user_element.find_elements(By.CSS_SELECTOR, "span.b-list-titles__item__text")
+    lists: list[str] = [element.text for element in lists_elements]
+    lists.remove("Lists")
+    return lists
+
+
+class PriceNotFoundError:
+    pass
 
 
 def get_price(price_text: str, offer: str) -> str:
