@@ -1,174 +1,178 @@
 import logging
 import time
-from typing import Optional
+from typing import Optional, Dict, List
 
 from price_parser import Price
 from selenium import webdriver
-from selenium.common import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-options = webdriver.ChromeOptions()
-options.add_argument("start-maximized")
-options.add_argument("incognito")
-# options.add_argument("headless")
-options.add_argument("disable-extensions")
-options.add_experimental_option("debuggerAddress", "localhost:9222")
-# options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
-driver = webdriver.Chrome(options=options)
-
+# Constants
 BASE_URL = "https://onlyfans.com/my/collections/user-lists/{}"
-
 PROFILE_LIST_SELECTOR = "span.b-list-titles__item__text"
+USER_ITEM_SELECTOR = "div.b-users__item"
+USERNAME_SELECTOR = "div.g-user-username"
+PRICE_SELECTOR = ".b-wrap-btn-text"
+AVATAR_SELECTOR = "a.g-avatar img"
+DISPLAY_NAME_SELECTOR = "div.g-user-name"
+LIST_SELECTOR = "span.b-list-titles__item__text"
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-def get_user_elements() -> list[WebElement]:
-    return driver.find_elements(By.CSS_SELECTOR, "div.b-users__item")
-
-
-def scrape_user_info() -> dict:
-    user_elements = get_user_elements()
-    user_info_dict: dict[str, dict] = {}
-
-    for user_element in user_elements:
-        if user_element.text == "":
-            continue
-        user_info = scrape_info(user_element)
-        if user_info:
-            username = user_info["username"]
-            if username:
-                logging.info(f"scraped user {username}")
-                logging.info(f"details: {user_info}")
-                user_info_dict[username] = user_info
-
-    return user_info_dict
-
-
-def scrape_list(list_id: int) -> dict[str, dict[str, str]]:
-    url = BASE_URL.format(list_id)
-    driver.get(url)
-    wait_until_page_loads()
-    user_info_dict: dict[str, dict] = {}
-
-    last_height = driver.execute_script("return document.body.scrollHeight")
-    while True:
-
-        scroll_to_bottom()
-        time.sleep(4)
-
-        # Calculate new scroll height and compare with last scroll height
-        new_height = driver.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:
-            break
-
-        old_size = len(user_info_dict)
-        user_info_dict |= scrape_user_info()
-        new_size = len(user_info_dict)
-        logging.info(f"scraped {new_size} users")
-
-        if old_size == new_size:
-            break
-
-    return user_info_dict
-
-
-def scroll_to_bottom():
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-
-
-def scrape_info(user_element) -> Optional[dict]:
-    username: str = user_element.find_element(By.CSS_SELECTOR, "div.g-user-username").text
-    price_element_text: str = get_price_text(user_element)
-    lists_text: list[str] = get_lists(user_element)
-
-    if price_element_text == "":
-        return unknown_user_info(username)
-    else:
-        split = price_element_text.split("\n")
-        return {
-            "username": username,
-            "subscription_status": split[0],
-            "price": split[1],
-            "lists": lists_text
-        }
-
-
-def unknown_user_info(username):
-    return {
-        "username": username,
-        "price": "?",
-        "subscription_status": "?"
-    }
-
-
-def get_price_text(user_element: WebElement):
-    try:
-        return user_element.find_element(By.CSS_SELECTOR, ".b-wrap-btn-text").text
-    except NoSuchElementException:
-        return ""
-
-
-def get_avatar_url():
-    return driver.find_element(By.CSS_SELECTOR, "a.g-avatar img").get_property("src")
-
-
-def get_display_name():
-    return driver.find_elements(By.CSS_SELECTOR, "div.g-user-name")[1].text
-
-
-def wait_until_page_loads():
-    time.sleep(1)
-
-    WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "div.b-users__item"))
-    )
-
-
-def get_lists(user_element: WebElement) -> list[str]:
-    lists_elements = user_element.find_elements(By.CSS_SELECTOR, "span.b-list-titles__item__text")
-    lists: list[str] = [element.text for element in lists_elements]
-    lists.remove("Lists")
-    return lists
-
-
-class PriceNotFoundError:
+class PriceNotFoundError(Exception):
     pass
 
 
-def get_price(price_text: str, offer: str) -> str:
-    if offer == "FREE" or offer == "FREE_TRIAL" or offer == "SUBSCRIBED":
-        price = "$0"
-    elif offer == "NO_OFFER":
-        price = price_text.split()[1]
-    elif offer == "OFFER":
-        price = price_text.split()[-4]
-    else:
-        raise PriceNotFoundError
+class OnlyFansScraper:
+    def __init__(self):
+        self.driver = self._setup_driver()
 
-    return standardize_price(price)
+    @staticmethod
+    def _setup_driver():
+        options = webdriver.ChromeOptions()
+        options.add_argument("start-maximized")
+        options.add_argument("incognito")
+        options.add_argument("disable-extensions")
+        options.add_experimental_option("debuggerAddress", "localhost:9222")
+        return webdriver.Chrome(options=options)
 
+    def get_user_elements(self) -> List[WebElement]:
+        return self.driver.find_elements(By.CSS_SELECTOR, USER_ITEM_SELECTOR)
 
-def get_offer(price_text: str) -> str:
-    if "RENEW" in price_text or "SUBSCRIBED" in price_text:
-        return "SUBSCRIBED"
-    elif "FREE for" in price_text:
-        return "FREE_TRIAL"
-    elif "days" in price_text:
-        return "OFFER"
-    elif "FOR FREE" in price_text:
-        return "FREE"
-    elif "per month" in price_text:
-        return "NO_OFFER"
-    else:
-        raise PriceNotFoundError
+    def scrape_user_info(self) -> Dict[str, Dict]:
+        user_elements = self.get_user_elements()
+        user_info_dict: Dict[str, Dict] = {}
 
+        for user_element in user_elements:
+            if user_element.text:
+                user_info = self.scrape_info(user_element)
+                if user_info and (username := user_info.get("username")):
+                    logging.info(f"Scraped user {username}")
+                    logging.info(f"Details: {user_info}")
+                    user_info_dict[username] = user_info
 
-def close_driver() -> None:
-    driver.quit()
+        return user_info_dict
 
+    def scrape_list(self, list_id: int) -> Dict[str, Dict[str, str]]:
+        url = BASE_URL.format(list_id)
+        self.driver.get(url)
+        self.wait_until_page_loads()
+        user_info_dict: Dict[str, Dict] = {}
 
-def standardize_price(price_string: str) -> str:
-    parsed_price = Price.fromstring(price_string)
-    return str(parsed_price.amount)
+        while True:
+            last_height = self.driver.execute_script("return document.body.scrollHeight")
+            self.scroll_to_bottom()
+            time.sleep(4)
+
+            new_height = self.driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                break
+
+            old_size = len(user_info_dict)
+            user_info_dict.update(self.scrape_user_info())
+            new_size = len(user_info_dict)
+            logging.info(f"Scraped {new_size} users")
+
+            if old_size == new_size:
+                break
+
+        return user_info_dict
+
+    def scroll_to_bottom(self):
+        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+    def scrape_info(self, user_element: WebElement) -> Optional[Dict]:
+        try:
+            username: str = user_element.find_element(By.CSS_SELECTOR, USERNAME_SELECTOR).text
+            price_element_text: str = self.get_price_text(user_element)
+            lists_text: List[str] = self.get_lists(user_element)
+
+            if not price_element_text:
+                return self.unknown_user_info(username)
+
+            split = price_element_text.split("\n")
+            return {
+                "username": username,
+                "subscription_status": split[0],
+                "price": split[1] if len(split) > 1 else "?",
+                "lists": lists_text
+            }
+        except NoSuchElementException:
+            logging.warning(f"Failed to scrape info for a user element")
+            return None
+
+    @staticmethod
+    def unknown_user_info(username: str) -> Dict[str, str]:
+        return {
+            "username": username,
+            "price": "?",
+            "subscription_status": "?"
+        }
+
+    @staticmethod
+    def get_price_text(user_element: WebElement) -> str:
+        try:
+            return user_element.find_element(By.CSS_SELECTOR, PRICE_SELECTOR).text
+        except NoSuchElementException:
+            return ""
+
+    def get_avatar_url(self) -> str:
+        return self.driver.find_element(By.CSS_SELECTOR, AVATAR_SELECTOR).get_property("src")
+
+    def get_display_name(self) -> str:
+        return self.driver.find_elements(By.CSS_SELECTOR, DISPLAY_NAME_SELECTOR)[1].text
+
+    def wait_until_page_loads(self):
+        try:
+            WebDriverWait(self.driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, USER_ITEM_SELECTOR))
+            )
+        except TimeoutException:
+            logging.error("Timeout waiting for page to load")
+
+    @staticmethod
+    def get_lists(user_element: WebElement) -> List[str]:
+        lists_elements = user_element.find_elements(By.CSS_SELECTOR, LIST_SELECTOR)
+        lists: List[str] = [element.text for element in lists_elements if element.text != "Lists"]
+        return lists
+
+    @staticmethod
+    def get_price(price_text: str, offer: str) -> str:
+        if offer in ("FREE", "FREE_TRIAL", "SUBSCRIBED"):
+            price = "$0"
+        elif offer == "NO_OFFER":
+            price = price_text.split()[1]
+        elif offer == "OFFER":
+            price = price_text.split()[-4]
+        else:
+            raise PriceNotFoundError("Unable to determine price")
+
+        return OnlyFansScraper.standardize_price(price)
+
+    @staticmethod
+    def get_offer(price_text: str) -> str:
+        if "RENEW" in price_text or "SUBSCRIBED" in price_text:
+            return "SUBSCRIBED"
+        elif "FREE for" in price_text:
+            return "FREE_TRIAL"
+        elif "days" in price_text:
+            return "OFFER"
+        elif "FOR FREE" in price_text:
+            return "FREE"
+        elif "per month" in price_text:
+            return "NO_OFFER"
+        else:
+            raise PriceNotFoundError("Unable to determine offer type")
+
+    def close_driver(self) -> None:
+        self.driver.quit()
+
+    @staticmethod
+    def standardize_price(price_string: str) -> str:
+        parsed_price = Price.fromstring(price_string)
+        return str(parsed_price.amount)
