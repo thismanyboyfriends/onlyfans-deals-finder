@@ -1,6 +1,12 @@
 import logging
 import time
+from collections import defaultdict
 from typing import Optional, Dict, List
+
+import csv
+import os
+from pathlib import Path
+from datetime import date
 
 from price_parser import Price
 from selenium import webdriver
@@ -23,6 +29,10 @@ LIST_SELECTOR = "span.b-list-titles__item__text"
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+current_date = date.today().strftime("%Y-%m-%d")
+script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+output_file: Path = script_dir / "output" / f"output-{current_date}.csv"
+
 
 class PriceNotFoundError(Exception):
     pass
@@ -31,6 +41,7 @@ class PriceNotFoundError(Exception):
 class OnlyFansScraper:
     def __init__(self):
         self.driver = self._setup_driver()
+        self.seen_users = defaultdict(bool)
 
     @staticmethod
     def _setup_driver():
@@ -44,25 +55,10 @@ class OnlyFansScraper:
     def get_user_elements(self) -> List[WebElement]:
         return self.driver.find_elements(By.CSS_SELECTOR, USER_ITEM_SELECTOR)
 
-    def scrape_user_info(self) -> Dict[str, Dict]:
-        user_elements = self.get_user_elements()
-        user_info_dict: Dict[str, Dict] = {}
-
-        for user_element in user_elements:
-            if user_element.text:
-                user_info = self.scrape_info(user_element)
-                if user_info and (username := user_info.get("username")):
-                    logging.info(f"Scraped user {username}")
-                    logging.info(f"Details: {user_info}")
-                    user_info_dict[username] = user_info
-
-        return user_info_dict
-
-    def scrape_list(self, list_id: int) -> Dict[str, Dict[str, str]]:
+    def scrape_list(self, list_id):
         url = BASE_URL.format(list_id)
         self.driver.get(url)
         self.wait_until_page_loads()
-        user_info_dict: Dict[str, Dict] = {}
 
         while True:
             last_height = self.driver.execute_script("return document.body.scrollHeight")
@@ -73,35 +69,56 @@ class OnlyFansScraper:
             if new_height == last_height:
                 break
 
-            old_size = len(user_info_dict)
-            user_info_dict.update(self.scrape_user_info())
-            new_size = len(user_info_dict)
-            logging.info(f"Scraped {new_size} users")
+            old_size = len(self.seen_users)
+            user_elements = self.get_user_elements()
+            self.write_to_csv(user_elements)
+            new_size = len(self.seen_users)
 
-            if old_size == new_size:
+            logging.info(f"Scraped {len(self.seen_users)} users")
+
+            if new_size == old_size:
                 break
 
-        return user_info_dict
+    def write_to_csv(self, user_elements):
+        # Open the file in append mode ('a') instead of write mode ('w')
+        with open(output_file, 'a', newline='') as csvfile:
+            fieldnames = ['username', 'price', 'subscription_status', 'lists']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-    def scroll_to_bottom(self):
-        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # Write the header only if the file is empty
+            if csvfile.tell() == 0:
+                writer.writeheader()
+
+            for user_element in user_elements:
+                user_info = self.scrape_info(user_element)
+                if user_info and not self.seen_users[user_info['username']]:
+                    writer.writerow(user_info)
+                    csvfile.flush()  # Force write to disk
+                    self.seen_users[user_info['username']] = True
+                    logging.info(f"Scraped {user_info['username']}")
 
     def scrape_info(self, user_element: WebElement) -> Optional[Dict]:
+
+        username: str = ""
+
         try:
             username: str = self.get_username(user_element)
+
+            if username is None or username == "":
+                return None
+
             price_element_text: str = self.get_price_text(user_element)
             lists_text: List[str] = self.get_lists(user_element)
 
             if not price_element_text:
                 return self.unknown_user_info(username)
 
-            split = price_element_text.split()
             offer = self.get_offer(price_element_text)
             price = self.get_price(price_element_text, offer)
-
+            subscription_status: str = self.get_subscription_status(price_element_text)
             return {
                 "username": username,
-                "subscription_status": split[0],
+                "subscription_status": subscription_status,
                 "price": price,
                 "lists": lists_text
             }
@@ -120,9 +137,13 @@ class OnlyFansScraper:
             "subscription_status": "?"
         }
 
+    def scroll_to_bottom(self):
+        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
     @staticmethod
     def get_username(user_element: WebElement) -> str:
-        return user_element.find_element(By.CSS_SELECTOR, USERNAME_SELECTOR).text
+        username = user_element.find_element(By.CSS_SELECTOR, USERNAME_SELECTOR).text
+        return username[1:]  # trim @ off
 
     @staticmethod
     def get_price_text(user_element: WebElement) -> str:
@@ -187,3 +208,12 @@ class OnlyFansScraper:
     def standardize_price(price_string: str) -> str:
         parsed_price = Price.fromstring(price_string)
         return str(parsed_price.amount)
+
+    def get_subscription_status(self, price_element_text) -> str:
+        split: str = price_element_text.split()[0]
+        if split == "SUBSCRIBE":
+            return "NO_SUBSCRIPTION"
+        elif split == "SUBSCRIBED" or split == "RENEW":
+            return "SUBSCRIBED"
+        else:
+            return "INVALID"

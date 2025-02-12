@@ -38,9 +38,7 @@ def main():
 
     scraper = list_scraper.OnlyFansScraper()
     try:
-        # Example usage
-        scraped_info = scraper.scrape_list(PAID_LIST)  # Replace with actual list ID
-        output.write_output_file(scraped_info)
+        scraper.scrape_list(ALL_LIST)
     finally:
         scraper.close_driver()
 
