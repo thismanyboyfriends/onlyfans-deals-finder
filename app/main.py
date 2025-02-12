@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).parent
 ACCOUNT_LIST = SCRIPT_DIR / "input" / "account_list.txt"
 
-CHROME_PATH = r"C:\chrome-win64\chrome.exe"
+CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 DEBUGGING_PORT = "9222"
 USER_DATA_DIR = r"C:\tempchromdir"
 
