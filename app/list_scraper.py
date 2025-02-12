@@ -139,6 +139,7 @@ class OnlyFansScraper:
     def get_lists(user_element: WebElement) -> List[str]:
         lists_elements = user_element.find_elements(By.CSS_SELECTOR, LIST_SELECTOR)
         lists: List[str] = [element.text for element in lists_elements if element.text != "Lists"]
+        lists.sort()
         return lists
 
     @staticmethod
