@@ -88,22 +88,28 @@ class OnlyFansScraper:
 
     def scrape_info(self, user_element: WebElement) -> Optional[Dict]:
         try:
-            username: str = user_element.find_element(By.CSS_SELECTOR, USERNAME_SELECTOR).text
+            username: str = self.get_username(user_element)
             price_element_text: str = self.get_price_text(user_element)
             lists_text: List[str] = self.get_lists(user_element)
 
             if not price_element_text:
                 return self.unknown_user_info(username)
 
-            split = price_element_text.split("\n")
+            split = price_element_text.split()
+            offer = self.get_offer(price_element_text)
+            price = self.get_price(price_element_text, offer)
+
             return {
                 "username": username,
                 "subscription_status": split[0],
-                "price": split[1] if len(split) > 1 else "?",
+                "price": price,
                 "lists": lists_text
             }
-        except NoSuchElementException:
-            logging.warning(f"Failed to scrape info for a user element")
+        except NoSuchElementException as e:
+            logging.warning(f"Failed to scrape info for user {username}: {str(e)}")
+            return None
+        except Exception as e:
+            logging.error(f"Unexpected error while scraping user {username}: {str(e)}")
             return None
 
     @staticmethod
@@ -113,6 +119,10 @@ class OnlyFansScraper:
             "price": "?",
             "subscription_status": "?"
         }
+
+    @staticmethod
+    def get_username(user_element: WebElement) -> str:
+        return user_element.find_element(By.CSS_SELECTOR, USERNAME_SELECTOR).text
 
     @staticmethod
     def get_price_text(user_element: WebElement) -> str:

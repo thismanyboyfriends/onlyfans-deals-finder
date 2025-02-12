@@ -8,3 +8,4 @@ selenium
 chromedriver
 undetected-chromedriver
 price-parser
+pytest
