@@ -2,9 +2,9 @@ import logging
 from pathlib import Path
 import subprocess
 
-from constants import PAID_LIST, ALL_LIST
-import output
+from constants import ALL_LIST
 import list_scraper
+from analyser import Analyser
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
@@ -38,7 +38,10 @@ def main():
 
     scraper = list_scraper.OnlyFansScraper()
     try:
-        scraper.scrape_list(ALL_LIST)
+        filename = scraper.scrape_list(ALL_LIST)
+        # filename = r"Z:\scripts\OFDealsFinder\src\output\output-2025-03-05.csv"
+        analyser = Analyser(filename)
+        analyser.analyse_list()
     finally:
         scraper.close_driver()
 

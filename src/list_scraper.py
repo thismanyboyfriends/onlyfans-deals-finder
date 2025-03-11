@@ -55,7 +55,7 @@ class OnlyFansScraper:
     def get_user_elements(self) -> List[WebElement]:
         return self.driver.find_elements(By.CSS_SELECTOR, USER_ITEM_SELECTOR)
 
-    def scrape_list(self, list_id):
+    def scrape_list(self, list_id) -> Path:
         url = BASE_URL.format(list_id)
         self.driver.get(url)
         self.wait_until_page_loads()
@@ -78,6 +78,8 @@ class OnlyFansScraper:
 
             if new_size == old_size:
                 break
+
+        return output_file
 
     def write_to_csv(self, user_elements):
         # Open the file in append mode ('a') instead of write mode ('w')
