@@ -32,15 +32,14 @@ class Analyser:
 
         return
 
-
     def find_free_accounts(self):
         """
         Finds accounts which are free but not currently subscribed to.
         Will highlight both free trials and free accounts who are not subscribed.
         """
-        data = self.query(attribute='price', value='0') # no price to subscribe
-        data = self.filter(data, lambda x: x.subscription_status == 'NO_SUBSCRIPTION') # not currently subscribed to
-        data = self.filter(data, lambda x: 'free' not in x.lists) # not in the 'free' list
+        data = self.query(attribute='price', value='0')  # no price to subscribe
+        data = self.filter(data, lambda x: x.subscription_status == 'NO_SUBSCRIPTION')  # not currently subscribed to
+        data = self.filter(data, lambda x: 'free' not in x.lists)  # not in the 'free' list
         data = self.filter(data, lambda x: 'inactive' not in x.lists)
 
         for obj in data:
@@ -79,13 +78,12 @@ class Analyser:
 
         return data
 
-
     def find_lapsed_activesubs(self):
         """
         finds accounts which are in the activesub list, but have not got an active subscription.
         """
         data = self.filter(self.data, lambda x: 'activesub' in x.lists)
-        data = self.filter(data, lambda x: x.subscription_status == 'NO_SUBSCRIPTION') # not currently subscribed to
+        data = self.filter(data, lambda x: x.subscription_status == 'NO_SUBSCRIPTION')  # not currently subscribed to
 
         for obj in data:
             print(f"lapsed activesub: https://onlyfans.com/{obj.username}")
@@ -107,7 +105,5 @@ class Analyser:
 
         data = self.filter(data, lambda x: 'inactive' not in x.lists)
 
-
         for obj in data:
             print(f"not tagged with a fetish: https://onlyfans.com/{obj.username} (lists: {obj.lists})")
-

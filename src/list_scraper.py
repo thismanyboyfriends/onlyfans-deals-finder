@@ -34,12 +34,27 @@ script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
 output_file: Path = script_dir / "output" / f"output-{current_date}.csv"
 
 
+CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+DEBUGGING_PORT = "9222"
+USER_DATA_DIR = r"C:\tempchromdir"
+import subprocess
+
 class PriceNotFoundError(Exception):
     pass
+
+def start_chrome():
+    command = [
+        CHROME_PATH,
+        f"--remote-debugging-port={DEBUGGING_PORT}",
+        f"--user-data-dir={USER_DATA_DIR}"
+    ]
+
+    subprocess.Popen(command)
 
 
 class OnlyFansScraper:
     def __init__(self):
+        start_chrome()
         self.driver = self._setup_driver()
         self.seen_users = defaultdict(bool)
 
@@ -211,7 +226,8 @@ class OnlyFansScraper:
         parsed_price = Price.fromstring(price_string)
         return str(parsed_price.amount)
 
-    def get_subscription_status(self, price_element_text) -> str:
+    @staticmethod
+    def get_subscription_status(price_element_text) -> str:
         split: str = price_element_text.split()[0]
         if split == "SUBSCRIBE":
             return "NO_SUBSCRIPTION"
