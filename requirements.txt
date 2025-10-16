@@ -8,4 +8,5 @@ selenium
 chromedriver
 undetected-chromedriver
 price-parser
+click>=8.0
 pytest
