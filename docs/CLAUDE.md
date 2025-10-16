@@ -28,9 +28,6 @@ OFDealsFinder is a Python-based tool that automates the collection and analysis 
   - `find_lapsed_activesubs()` - Expired subscriptions still marked active
   - `find_not_tagged_with_fetish()` - Accounts missing category tags
 
-**constants.py** - List IDs
-- Defines OnlyFans list IDs as constants (PAID_LIST, ALL_LIST, etc.)
-
 **main.py** - Entry point
 - Orchestrates Selenium scraping → analysis workflow
 - Starts scraper, fetches list data, runs analysis

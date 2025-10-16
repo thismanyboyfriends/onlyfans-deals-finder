@@ -195,29 +195,6 @@ class DatabaseAnalyser:
         else:
             print(f"No history found for @{username}")
 
-    def export_csv(self, output_path: Path):
-        """Export current data to CSV for compatibility."""
-        import csv
-
-        users = self.db.get_users_with_lists()
-
-        with open(output_path, 'w', newline='') as csvfile:
-            fieldnames = ['username', 'price', 'subscription_status', 'lists']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-
-            for user in users:
-                lists_str = ','.join(user['lists'])
-                writer.writerow({
-                    'username': user['username'],
-                    'price': user['current_price'],
-                    'subscription_status': user['subscription_status'],
-                    'lists': lists_str
-                })
-
-        logger.info(f"Exported {len(users)} users to {output_path}")
-        print(f"\n✓ Exported {len(users)} users to {output_path}")
-
     def close(self):
         """Close database connection."""
         self.db.close()

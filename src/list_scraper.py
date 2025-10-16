@@ -3,11 +3,7 @@ import time
 import re
 from collections import defaultdict
 from typing import Optional, Dict, List
-
-import csv
-import os
 from pathlib import Path
-from datetime import date
 
 from price_parser import Price
 from selenium import webdriver
@@ -28,13 +24,6 @@ PRICE_SELECTOR = ".b-wrap-btn-text"
 AVATAR_SELECTOR = "a.g-avatar img"
 DISPLAY_NAME_SELECTOR = "div.g-user-name"
 LIST_SELECTOR = "span.b-list-titles__item__text"
-
-current_date = date.today().strftime("%Y-%m-%d")
-# Get project root (one level up from src)
-project_root = Path(os.path.dirname(os.path.abspath(__file__))).parent
-output_dir = project_root / "output"
-output_dir.mkdir(exist_ok=True)
-output_file: Path = output_dir / f"output-{current_date}.csv"
 
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -57,18 +46,16 @@ def start_chrome():
 
 
 class OnlyFansScraper:
-    def __init__(self, use_database: bool = True, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None):
         """Initialize scraper.
 
         Args:
-            use_database: If True, store data in SQLite. If False, use CSV (legacy).
-            db_path: Path to database file (only used if use_database=True)
+            db_path: Path to database file (optional, defaults to data/scraper.db)
         """
         start_chrome()
         self.driver = self._setup_driver()
         self.seen_users = defaultdict(bool)
-        self.use_database = use_database
-        self.db = Database(db_path) if use_database else None
+        self.db = Database(db_path)
         self.current_run_id = None
 
     @staticmethod
@@ -111,12 +98,9 @@ class OnlyFansScraper:
         self.driver.get(url)
         self.wait_until_page_loads()
 
-        # Initialize storage (database or CSV)
-        if self.use_database:
-            self.current_run_id = self.db.start_scrape_run(list_id)
-            logging.info(f"Started scrape run #{self.current_run_id} for list {list_id}")
-        else:
-            self.initialize_csv()
+        # Initialize database scrape run
+        self.current_run_id = self.db.start_scrape_run(list_id)
+        logging.info(f"Started scrape run #{self.current_run_id} for list {list_id}")
 
         # Wait for Vue virtual scroller to initialize
         try:
@@ -134,8 +118,7 @@ class OnlyFansScraper:
             # Check for page errors
             if self.check_for_page_errors():
                 logging.error("Page error couldn't be resolved, stopping scrape")
-                if self.use_database:
-                    self.db.complete_scrape_run(self.current_run_id, len(self.seen_users), 'error')
+                self.db.complete_scrape_run(self.current_run_id, len(self.seen_users), 'error')
                 break
 
             old_user_count = len(self.seen_users)
@@ -149,10 +132,7 @@ class OnlyFansScraper:
             # Scrape only NEW visible items (optimization)
             new_elements = self.get_new_user_elements()
             if new_elements:
-                if self.use_database:
-                    self.write_to_database(new_elements)
-                else:
-                    self.write_to_csv(new_elements)
+                self.write_to_database(new_elements)
 
                 new_user_count = len(self.seen_users)
                 newly_added = new_user_count - old_user_count
@@ -167,21 +147,8 @@ class OnlyFansScraper:
 
         # Complete the scrape
         logging.info(f"Scraping complete. Total users: {len(self.seen_users)}")
-
-        if self.use_database:
-            self.db.complete_scrape_run(self.current_run_id, len(self.seen_users), 'completed')
-            return self.db.db_path
-        else:
-            return output_file
-
-    def initialize_csv(self):
-        """Create CSV file with headers if it doesn't exist (legacy mode)"""
-        if not os.path.exists(output_file):
-            with open(output_file, 'w', newline='') as csvfile:
-                fieldnames = ['username', 'price', 'subscription_status', 'lists']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                logging.info(f"Created CSV file: {output_file}")
+        self.db.complete_scrape_run(self.current_run_id, len(self.seen_users), 'completed')
+        return self.db.db_path
 
     def write_to_database(self, user_elements):
         """Write user data to SQLite database with batch processing"""
@@ -213,35 +180,6 @@ class OnlyFansScraper:
                 logging.info(f"Scraped {user['username']}")
             except Exception as e:
                 logging.error(f"Failed to save {user['username']} to database: {e}")
-
-    def write_to_csv(self, user_elements):
-        """Write user data to CSV with batch processing (legacy mode)"""
-        new_users = []
-
-        # Collect all new user data first
-        for user_element in user_elements:
-            user_info = self.scrape_info(user_element)
-            if user_info and not self.seen_users.get(user_info['username']):
-                new_users.append(user_info)
-                self.seen_users[user_info['username']] = True
-
-        # Batch write to CSV
-        if new_users:
-            with open(output_file, 'a', newline='') as csvfile:
-                fieldnames = ['username', 'price', 'subscription_status', 'lists']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
-                # Write the header only if the file is empty
-                if csvfile.tell() == 0:
-                    writer.writeheader()
-
-                # Write all rows in one batch
-                writer.writerows(new_users)
-                csvfile.flush()  # Single flush after batch
-
-            # Log individual usernames
-            for user in new_users:
-                logging.info(f"Scraped {user['username']}")
 
     def scrape_info(self, user_element: WebElement) -> Optional[Dict]:
 
@@ -458,10 +396,11 @@ class OnlyFansScraper:
             return "INVALID"
 
         # Make case-insensitive
+        text_upper = price_element_text.upper()
         first_word = parts[0].upper()
         if first_word == "SUBSCRIBE":
             return "NO_SUBSCRIPTION"
-        elif first_word == "SUBSCRIBED" or first_word == "RENEW":
+        elif first_word == "SUBSCRIBED" or first_word == "RENEW" or "SUBSCRIBEDFOR" in text_upper:
             return "SUBSCRIBED"
         else:
             logging.warning(f"Unknown subscription status keyword: '{parts[0]}' in text: '{price_element_text}'")

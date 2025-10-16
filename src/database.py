@@ -1,8 +1,6 @@
 """SQLite database management for OnlyFans user data."""
 import sqlite3
 import logging
-import csv
-import re
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
@@ -332,121 +330,6 @@ class Database:
             'price_records': price_records,
             'last_scrape': last_scrape_date
         }
-
-    @staticmethod
-    def _extract_date_from_filename(csv_path: Path) -> Optional[datetime]:
-        """Extract date from CSV filename in format output-YYYY-MM-DD.csv
-
-        Args:
-            csv_path: Path to CSV file
-
-        Returns:
-            Datetime object at start of day, or None if no date found
-        """
-        filename = csv_path.stem  # Get filename without extension
-        match = re.search(r'(\d{4})-(\d{2})-(\d{2})', filename)
-
-        if match:
-            year, month, day = match.groups()
-            try:
-                return datetime(int(year), int(month), int(day))
-            except ValueError:
-                return None
-
-        return None
-
-    def import_csv(self, csv_path: Path, list_id: str = "imported",
-                   scraped_at: Optional[datetime] = None) -> int:
-        """Import data from a CSV file into the database.
-
-        Args:
-            csv_path: Path to CSV file (must have columns: username, price, subscription_status, lists)
-            list_id: List ID to associate with this import (default: "imported")
-            scraped_at: Optional datetime for when data was scraped. If None, attempts to extract from filename.
-                       Filename format: output-YYYY-MM-DD.csv
-
-        Returns:
-            Number of users imported
-        """
-        csv_path = Path(csv_path)
-        if not csv_path.exists():
-            raise FileNotFoundError(f"CSV file not found: {csv_path}")
-
-        # Extract date from filename if not provided
-        if scraped_at is None:
-            extracted_date = self._extract_date_from_filename(csv_path)
-            if extracted_date:
-                scraped_at = extracted_date
-                logger.info(f"Extracted date from filename: {scraped_at.date()}")
-            else:
-                logger.warning(f"Could not extract date from filename. Using current time.")
-                scraped_at = datetime.now()
-
-        # Create a scrape run for this import with the specified timestamp
-        run_id = self.start_scrape_run(list_id, started_at=scraped_at)
-        logger.info(f"Importing from {csv_path.name} (dated: {scraped_at.strftime('%Y-%m-%d %H:%M:%S')})")
-        user_count = 0
-
-        try:
-            with open(csv_path, 'r', encoding='utf-8') as csvfile:
-                reader = csv.DictReader(csvfile)
-
-                # Validate required columns
-                if not reader.fieldnames:
-                    raise ValueError("CSV file is empty")
-
-                required_cols = {'username', 'price', 'subscription_status', 'lists'}
-                csv_cols = set(reader.fieldnames)
-
-                if not required_cols.issubset(csv_cols):
-                    missing = required_cols - csv_cols
-                    raise ValueError(f"CSV missing required columns: {missing}")
-
-                # Process each row
-                for row in reader:
-                    try:
-                        username = row['username'].strip()
-                        if not username:
-                            logger.warning("Skipping row with empty username")
-                            continue
-
-                        # Parse price - handle various formats
-                        price_str = row['price'].strip()
-                        try:
-                            price = float(price_str) if price_str and price_str != '?' else 0.0
-                        except ValueError:
-                            logger.warning(f"Could not parse price '{price_str}' for {username}, using 0.0")
-                            price = 0.0
-
-                        # Get subscription status
-                        status = row['subscription_status'].strip() or "NO_SUBSCRIPTION"
-
-                        # Parse lists - can be comma-separated
-                        lists_str = row['lists'].strip()
-                        lists = [l.strip() for l in lists_str.split(',') if l.strip()] if lists_str else []
-
-                        # Insert user data with the scraped timestamp
-                        self.upsert_user(username, price, status, lists, run_id, scraped_at=scraped_at)
-                        user_count += 1
-
-                        if user_count % 100 == 0:
-                            logger.info(f"Imported {user_count} users...")
-
-                    except Exception as e:
-                        logger.warning(f"Error importing row {user_count + 1}: {e}")
-                        continue
-
-            # Mark import as complete
-            self.complete_scrape_run(run_id, user_count, 'completed')
-            logger.info(f"Successfully imported {user_count} users from {csv_path.name} dated {scraped_at.strftime('%Y-%m-%d')}")
-
-            return user_count
-
-        except Exception as e:
-            logger.error(f"CSV import failed: {e}")
-            # Mark as failed
-            self.complete_scrape_run(run_id, 0, 'failed')
-            raise
 
     def close(self):
         """Close database connection."""
