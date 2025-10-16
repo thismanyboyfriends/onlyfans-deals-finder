@@ -26,12 +26,11 @@ AVATAR_SELECTOR = "a.g-avatar img"
 DISPLAY_NAME_SELECTOR = "div.g-user-name"
 LIST_SELECTOR = "span.b-list-titles__item__text"
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 current_date = date.today().strftime("%Y-%m-%d")
 script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-output_file: Path = script_dir / "output" / f"output-{current_date}.csv"
+output_dir = script_dir / "output"
+output_dir.mkdir(exist_ok=True)
+output_file: Path = output_dir / f"output-{current_date}.csv"
 
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -50,6 +49,7 @@ def start_chrome():
     ]
 
     subprocess.Popen(command)
+    time.sleep(3)  # Wait for Chrome to start
 
 
 class OnlyFansScraper:
@@ -130,9 +130,13 @@ class OnlyFansScraper:
             if not price_element_text:
                 return self.unknown_user_info(username)
 
-            offer = self.get_offer(price_element_text)
-            price = self.get_price(price_element_text, offer)
-            subscription_status: str = self.get_subscription_status(price_element_text)
+            try:
+                offer = self.get_offer(price_element_text)
+                price = self.get_price(price_element_text, offer)
+                subscription_status: str = self.get_subscription_status(price_element_text)
+            except PriceNotFoundError as e:
+                logging.warning(f"Price parsing failed for user {username}: {str(e)}")
+                return self.unknown_user_info(username)
             return {
                 "username": username,
                 "subscription_status": subscription_status,
@@ -151,7 +155,8 @@ class OnlyFansScraper:
         return {
             "username": username,
             "price": "?",
-            "subscription_status": "?"
+            "subscription_status": "?",
+            "lists": []
         }
 
     def scroll_to_bottom(self):
@@ -173,7 +178,12 @@ class OnlyFansScraper:
         return self.driver.find_element(By.CSS_SELECTOR, AVATAR_SELECTOR).get_property("src")
 
     def get_display_name(self) -> str:
-        return self.driver.find_elements(By.CSS_SELECTOR, DISPLAY_NAME_SELECTOR)[1].text
+        elements = self.driver.find_elements(By.CSS_SELECTOR, DISPLAY_NAME_SELECTOR)
+        if len(elements) > 1:
+            return elements[1].text
+        elif len(elements) == 1:
+            return elements[0].text
+        return ""
 
     def wait_until_page_loads(self):
         try:

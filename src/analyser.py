@@ -99,7 +99,6 @@ class Analyser:
         data = self.filter(self.data, lambda x: 'femdom' not in x.lists)
         data = self.filter(data, lambda x: 'vanilla' not in x.lists)
         data = self.filter(data, lambda x: 'femboy' not in x.lists)
-        data = self.filter(data, lambda x: 'femboy' not in x.lists)
         data = self.filter(data, lambda x: 'qos' not in x.lists)
         data = self.filter(data, lambda x: 'male' not in x.lists)
 
