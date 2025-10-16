@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+import os
 
 import constants
 import list_scraper
@@ -22,6 +23,20 @@ def main():
     scraper = list_scraper.OnlyFansScraper()
     try:
         filename = scraper.scrape_list(constants.ALL_LIST)
+
+        # Check if scraping was successful before analyzing
+        if not os.path.exists(filename):
+            logger.error(f"CSV file not created. Scraping may have failed.")
+            return
+
+        # Check if file has data (more than just headers)
+        file_size = os.path.getsize(filename)
+        if file_size < 100:  # Less than 100 bytes means likely just headers or empty
+            logger.warning(f"CSV file is empty or has no data. Skipping analysis.")
+            logger.info(f"Output file: {filename}")
+            return
+
+        logger.info(f"Scraping successful. Analyzing {filename}...")
         analyser = Analyser(filename)
         analyser.analyse_list()
     finally:

@@ -11,7 +11,7 @@ from datetime import date
 
 from price_parser import Price
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, ElementNotInteractableException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
@@ -99,6 +99,9 @@ class OnlyFansScraper:
         self.driver.get(url)
         self.wait_until_page_loads()
 
+        # Create CSV with headers even if we scrape 0 users
+        self.initialize_csv()
+
         # Wait for Vue virtual scroller to initialize
         try:
             WebDriverWait(self.driver, 10).until(
@@ -142,6 +145,15 @@ class OnlyFansScraper:
 
         logging.info(f"Scraping complete. Total users: {len(self.seen_users)}")
         return output_file
+
+    def initialize_csv(self):
+        """Create CSV file with headers if it doesn't exist"""
+        if not os.path.exists(output_file):
+            with open(output_file, 'w', newline='') as csvfile:
+                fieldnames = ['username', 'price', 'subscription_status', 'lists']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                logging.info(f"Created CSV file: {output_file}")
 
     def write_to_csv(self, user_elements):
         """Write user data to CSV with batch processing for better performance"""
@@ -291,18 +303,33 @@ class OnlyFansScraper:
         try:
             # Look for the error message
             error_elem = self.driver.find_element(By.XPATH, "//*[contains(text(), 'Opps, something went wrong')]")
-            if error_elem:
+
+            # Only treat as error if the element is actually visible to the user
+            if error_elem and error_elem.is_displayed():
                 logging.error("Page showed error: 'Opps, something went wrong'")
                 # Try clicking retry button
                 try:
                     retry_btn = self.driver.find_element(By.CSS_SELECTOR, ".btn-try-infinite")
-                    retry_btn.click()
-                    logging.info("Clicked retry button, waiting for recovery...")
-                    time.sleep(2)
-                    return False  # Error handled
-                except NoSuchElementException:
-                    logging.error("Retry button not found")
+
+                    # Check if button is actually clickable
+                    if retry_btn.is_displayed() and retry_btn.is_enabled():
+                        # Scroll to button to ensure it's in view
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", retry_btn)
+                        time.sleep(0.5)
+                        retry_btn.click()
+                        logging.info("Clicked retry button, waiting for recovery...")
+                        time.sleep(2)
+                        return False  # Error handled
+                    else:
+                        logging.error("Retry button found but not clickable")
+                        return True  # Error couldn't be fixed
+
+                except (NoSuchElementException, ElementNotInteractableException) as e:
+                    logging.error(f"Could not interact with retry button: {str(e)}")
                     return True  # Error couldn't be fixed
+            else:
+                # Error element exists in DOM but is hidden - not a real error
+                return False
         except NoSuchElementException:
             return False  # No error
 
