@@ -1,6 +1,8 @@
 """SQLite database management for OnlyFans user data."""
 import sqlite3
 import logging
+import csv
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
@@ -16,11 +18,12 @@ class Database:
         """Initialize database connection.
 
         Args:
-            db_path: Path to SQLite database file. Defaults to src/data/scraper.db
+            db_path: Path to SQLite database file. Defaults to data/scraper.db
         """
         if db_path is None:
-            script_dir = Path(__file__).parent
-            data_dir = script_dir / "data"
+            # Get project root (one level up from src)
+            project_root = Path(__file__).parent.parent
+            data_dir = project_root / "data"
             data_dir.mkdir(exist_ok=True)
             db_path = data_dir / "scraper.db"
 
@@ -114,13 +117,24 @@ class Database:
             logger.error(f"Transaction failed: {e}")
             raise
 
-    def start_scrape_run(self, list_id: str) -> int:
-        """Start a new scrape run and return its ID."""
+    def start_scrape_run(self, list_id: str, started_at: Optional[datetime] = None) -> int:
+        """Start a new scrape run and return its ID.
+
+        Args:
+            list_id: The list ID being scraped
+            started_at: Optional datetime for the scrape (defaults to now)
+
+        Returns:
+            The ID of the created scrape run
+        """
+        if started_at is None:
+            started_at = datetime.now()
+
         with self.transaction() as cursor:
             cursor.execute("""
                 INSERT INTO scrape_runs (list_id, started_at, status)
                 VALUES (?, ?, 'running')
-            """, (list_id, datetime.now()))
+            """, (list_id, started_at))
             return cursor.lastrowid
 
     def complete_scrape_run(self, run_id: int, user_count: int, status: str = 'completed'):
@@ -133,9 +147,19 @@ class Database:
             """, (datetime.now(), user_count, status, run_id))
 
     def upsert_user(self, username: str, price: float, subscription_status: str,
-                    lists: List[str], run_id: int):
-        """Insert or update user data."""
-        now = datetime.now()
+                    lists: List[str], run_id: int, scraped_at: Optional[datetime] = None):
+        """Insert or update user data.
+
+        Args:
+            username: OnlyFans username
+            price: Subscription price
+            subscription_status: NO_SUBSCRIPTION or SUBSCRIBED
+            lists: List of list names
+            run_id: The scrape run ID
+            scraped_at: Optional timestamp for when this was scraped (defaults to now)
+        """
+        if scraped_at is None:
+            scraped_at = datetime.now()
 
         with self.transaction() as cursor:
             # Check if user exists
@@ -151,7 +175,7 @@ class Database:
                     SET current_price = ?, subscription_status = ?,
                         last_seen = ?, last_scraped_run_id = ?
                     WHERE username = ?
-                """, (price, subscription_status, now, run_id, username))
+                """, (price, subscription_status, scraped_at, run_id, username))
 
                 # Log price change
                 if old_price != price:
@@ -162,7 +186,7 @@ class Database:
                     INSERT INTO users (username, current_price, subscription_status,
                                      first_seen, last_seen, last_scraped_run_id)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (username, price, subscription_status, now, now, run_id))
+                """, (username, price, subscription_status, scraped_at, scraped_at, run_id))
                 logger.debug(f"New user added: {username}")
 
             # Always insert into price history
@@ -170,10 +194,10 @@ class Database:
                 INSERT INTO price_history (username, price, subscription_status,
                                          scraped_at, scrape_run_id)
                 VALUES (?, ?, ?, ?, ?)
-            """, (username, price, subscription_status, now, run_id))
+            """, (username, price, subscription_status, scraped_at, run_id))
 
             # Update lists
-            self._update_user_lists(cursor, username, lists, run_id, now)
+            self._update_user_lists(cursor, username, lists, run_id, scraped_at)
 
     def _update_user_lists(self, cursor, username: str, current_lists: List[str],
                            run_id: int, now: datetime):
@@ -308,6 +332,121 @@ class Database:
             'price_records': price_records,
             'last_scrape': last_scrape_date
         }
+
+    @staticmethod
+    def _extract_date_from_filename(csv_path: Path) -> Optional[datetime]:
+        """Extract date from CSV filename in format output-YYYY-MM-DD.csv
+
+        Args:
+            csv_path: Path to CSV file
+
+        Returns:
+            Datetime object at start of day, or None if no date found
+        """
+        filename = csv_path.stem  # Get filename without extension
+        match = re.search(r'(\d{4})-(\d{2})-(\d{2})', filename)
+
+        if match:
+            year, month, day = match.groups()
+            try:
+                return datetime(int(year), int(month), int(day))
+            except ValueError:
+                return None
+
+        return None
+
+    def import_csv(self, csv_path: Path, list_id: str = "imported",
+                   scraped_at: Optional[datetime] = None) -> int:
+        """Import data from a CSV file into the database.
+
+        Args:
+            csv_path: Path to CSV file (must have columns: username, price, subscription_status, lists)
+            list_id: List ID to associate with this import (default: "imported")
+            scraped_at: Optional datetime for when data was scraped. If None, attempts to extract from filename.
+                       Filename format: output-YYYY-MM-DD.csv
+
+        Returns:
+            Number of users imported
+        """
+        csv_path = Path(csv_path)
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+        # Extract date from filename if not provided
+        if scraped_at is None:
+            extracted_date = self._extract_date_from_filename(csv_path)
+            if extracted_date:
+                scraped_at = extracted_date
+                logger.info(f"Extracted date from filename: {scraped_at.date()}")
+            else:
+                logger.warning(f"Could not extract date from filename. Using current time.")
+                scraped_at = datetime.now()
+
+        # Create a scrape run for this import with the specified timestamp
+        run_id = self.start_scrape_run(list_id, started_at=scraped_at)
+        logger.info(f"Importing from {csv_path.name} (dated: {scraped_at.strftime('%Y-%m-%d %H:%M:%S')})")
+        user_count = 0
+
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+
+                # Validate required columns
+                if not reader.fieldnames:
+                    raise ValueError("CSV file is empty")
+
+                required_cols = {'username', 'price', 'subscription_status', 'lists'}
+                csv_cols = set(reader.fieldnames)
+
+                if not required_cols.issubset(csv_cols):
+                    missing = required_cols - csv_cols
+                    raise ValueError(f"CSV missing required columns: {missing}")
+
+                # Process each row
+                for row in reader:
+                    try:
+                        username = row['username'].strip()
+                        if not username:
+                            logger.warning("Skipping row with empty username")
+                            continue
+
+                        # Parse price - handle various formats
+                        price_str = row['price'].strip()
+                        try:
+                            price = float(price_str) if price_str and price_str != '?' else 0.0
+                        except ValueError:
+                            logger.warning(f"Could not parse price '{price_str}' for {username}, using 0.0")
+                            price = 0.0
+
+                        # Get subscription status
+                        status = row['subscription_status'].strip() or "NO_SUBSCRIPTION"
+
+                        # Parse lists - can be comma-separated
+                        lists_str = row['lists'].strip()
+                        lists = [l.strip() for l in lists_str.split(',') if l.strip()] if lists_str else []
+
+                        # Insert user data with the scraped timestamp
+                        self.upsert_user(username, price, status, lists, run_id, scraped_at=scraped_at)
+                        user_count += 1
+
+                        if user_count % 100 == 0:
+                            logger.info(f"Imported {user_count} users...")
+
+                    except Exception as e:
+                        logger.warning(f"Error importing row {user_count + 1}: {e}")
+                        continue
+
+            # Mark import as complete
+            self.complete_scrape_run(run_id, user_count, 'completed')
+            logger.info(f"Successfully imported {user_count} users from {csv_path.name} dated {scraped_at.strftime('%Y-%m-%d')}")
+
+            return user_count
+
+        except Exception as e:
+            logger.error(f"CSV import failed: {e}")
+            # Mark as failed
+            self.complete_scrape_run(run_id, 0, 'failed')
+            raise
 
     def close(self):
         """Close database connection."""

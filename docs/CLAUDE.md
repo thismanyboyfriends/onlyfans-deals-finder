@@ -41,7 +41,7 @@ OFDealsFinder is a Python-based tool that automates the collection and analysis 
 2. Selenium connects to debug port and navigates to list URL
 3. Infinite scroll loads all users in the list
 4. For each user element, scrape username, price, subscription status, tags
-5. Write incrementally to CSV: `src/output/output-YYYY-MM-DD.csv`
+5. Write incrementally to CSV: `output/output-YYYY-MM-DD.csv`
 6. Analyser loads CSV and runs analysis methods
 7. Results printed as OnlyFans URLs
 
@@ -58,7 +58,7 @@ The scraper starts Chrome automatically via `start_chrome()` function.
 options.add_experimental_option("debuggerAddress", "localhost:9222")
 ```
 
-**CSV Output**: Files written to `src/output/output-YYYY-MM-DD.csv` with columns:
+**CSV Output**: Files written to `output/output-YYYY-MM-DD.csv` with columns:
 - username
 - price (standardized to dollar amount)
 - subscription_status (NO_SUBSCRIPTION, SUBSCRIBED)

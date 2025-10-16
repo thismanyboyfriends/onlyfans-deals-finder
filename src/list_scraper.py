@@ -30,8 +30,9 @@ DISPLAY_NAME_SELECTOR = "div.g-user-name"
 LIST_SELECTOR = "span.b-list-titles__item__text"
 
 current_date = date.today().strftime("%Y-%m-%d")
-script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-output_dir = script_dir / "output"
+# Get project root (one level up from src)
+project_root = Path(os.path.dirname(os.path.abspath(__file__))).parent
+output_dir = project_root / "output"
 output_dir.mkdir(exist_ok=True)
 output_file: Path = output_dir / f"output-{current_date}.csv"
 

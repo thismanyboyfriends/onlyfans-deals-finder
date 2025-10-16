@@ -6,6 +6,7 @@ A Python-based tool that automates the collection and analysis of OnlyFans subsc
 
 - **Automated Scraping**: Uses Selenium to scrape OnlyFans user lists with infinite scroll support
 - **SQLite Database**: Historical price tracking with advanced analysis (default mode)
+- **CSV Import**: Import your existing CSV scrapes into the database 📥
 - **CSV Export**: Optional CSV export
 - **Smart Detection**: Identifies free trials, paid subscriptions, and promotional offers
 - **Historical Tracking**: Track price changes over time and find historical lows
@@ -84,9 +85,6 @@ This makes the `ofdeals` and `onlyfans-deals` commands available globally.
 ### Quick Start
 
 ```bash
-# Install
-pip install -e .
-
 # Scrape data (uses database by default)
 ofdeals scrape
 
@@ -111,6 +109,7 @@ ofdeals lists
 | Command | Description |
 |---------|-------------|
 | `ofdeals scrape` | Scrape list and store in database |
+| `ofdeals import CSV_FILE` | Import CSV data into database 📥 |
 | `ofdeals stats` | Show database statistics |
 | `ofdeals deals` | Find users at historical low prices 💰 |
 | `ofdeals history` | Show recent price changes |
@@ -306,6 +305,57 @@ Debugging Port:   9222
 ✓ User data directory exists
 ```
 
+#### `ofdeals import`
+
+Import existing CSV data into the SQLite database for historical tracking and advanced analysis.
+
+**Arguments:**
+- `CSV_FILE` - Path to CSV file to import (required)
+
+**Options:**
+- `--list-id, -l TEXT` - List ID to associate with import (default: "imported")
+- `--db-path, -d PATH` - Custom database path
+- `--analyze/--no-analyze` - Run analysis after import (default: analyze)
+
+**CSV Format:**
+Your CSV file must have these columns:
+- `username` - OnlyFans username (without @)
+- `price` - Monthly subscription price (numeric)
+- `subscription_status` - `NO_SUBSCRIPTION` or `SUBSCRIBED`
+- `lists` - Comma-separated list names
+
+**Examples:**
+
+```bash
+# Import a CSV file into default database
+ofdeals import output/output-2025-10-16.csv
+
+# Import with specific list ID
+ofdeals import data.csv --list-id my-custom-list
+
+# Import without running analysis
+ofdeals import data.csv --no-analyze
+
+# Import into custom database
+ofdeals import data.csv --db-path ~/my-data/custom.db
+
+# Import with verbose logging
+ofdeals -v import data.csv
+```
+
+**What Happens:**
+1. Creates a "scrape run" entry in the database to track when the import happened
+2. Reads the CSV and parses each row
+3. Inserts/updates users in the database with their prices and subscription status
+4. Records price history for future trend analysis
+5. Optionally runs analysis to show patterns in the imported data
+
+**Tips:**
+- Import multiple CSVs to build up historical data
+- Each import creates a separate "scrape run" entry with timestamp
+- Use `ofdeals history --days 7` to see price changes across imports
+- Use `ofdeals deals` to find historical low prices from all your imports
+
 #### `ofdeals analyze` (Legacy)
 
 Analyze an existing CSV file from a previous scrape (legacy CSV mode).
@@ -317,7 +367,7 @@ Analyze an existing CSV file from a previous scrape (legacy CSV mode).
 
 ```bash
 # Analyze a specific file
-ofdeals analyze src/output/output-2025-10-16.csv
+ofdeals analyze output/output-2025-10-16.csv
 
 # Analyze with verbose logging
 ofdeals -v analyze data.csv
@@ -328,7 +378,7 @@ ofdeals -v analyze data.csv
 
 #### Database Mode (Default)
 
-Data is automatically stored in SQLite database at `src/data/scraper.db` with full price history tracking.
+Data is automatically stored in SQLite database at `data/scraper.db` with full price history tracking.
 
 Query data using CLI commands:
 - `ofdeals stats` - View database statistics
@@ -339,7 +389,7 @@ Query data using CLI commands:
 
 #### CSV Mode (Legacy)
 
-When using `--use-csv` flag, data is saved to `src/output/output-YYYY-MM-DD.csv` with columns:
+When using `--use-csv` flag, data is saved to `output/output-YYYY-MM-DD.csv` with columns:
 
 | Column | Description | Example |
 |--------|-------------|---------|
@@ -403,23 +453,26 @@ onlyfans-deals-finder/
 │   ├── database.py                # SQLite database management
 │   ├── db_analyser.py             # Database-based analysis
 │   ├── constants.py               # List IDs configuration
-│   ├── output/                    # CSV output directory (legacy mode)
-│   │   └── output-YYYY-MM-DD.csv
-│   ├── data/                      # Database directory
-│   │   └── scraper.db
 │   └── api_experimental/          # Non-working API approach (experimental)
 │       ├── api_client.py
 │       ├── list_fetcher.py
 │       ├── signature.py
 │       ├── setup_auth.py
 │       └── README.md
+├── data/                          # SQLite database storage
+│   └── scraper.db                 # Main database file
+├── output/                        # CSV output directory (legacy mode)
+│   └── output-YYYY-MM-DD.csv
+├── input/                         # Input data directory (for future use)
 ├── docs/                          # Documentation
 │   ├── database.md                # Detailed database documentation
+│   ├── CSV_IMPORT.md              # CSV import guide
 │   └── CLAUDE.md                  # Development guidance
 ├── examples/                      # HTML examples for reference
 ├── requirements.txt               # Python dependencies
 ├── setup.py                       # Setup configuration
 ├── ONLYFANS_API_DOCUMENTATION.md  # Reverse-engineered API docs
+├── IMPORT_EXAMPLE.csv             # Sample CSV for import feature
 └── README.md                      # This file
 ```
 
@@ -514,7 +567,7 @@ ofdeals scrape
 
 ```bash
 # Delete the database file
-rm src/data/scraper.db
+rm data/scraper.db
 
 # Next scrape will create a new one
 ofdeals scrape
@@ -526,7 +579,7 @@ The database is standard SQLite. Query it directly for custom analysis:
 
 ```bash
 # Open database
-sqlite3 src/data/scraper.db
+sqlite3 data/scraper.db
 
 # Example queries:
 # Users who decreased price in last week
@@ -613,6 +666,30 @@ ofdeals scrape --no-analyze --output raw-data.csv
 ofdeals analyze raw-data.csv
 ```
 
+### Importing Existing CSV Data
+
+```bash
+# Import a single CSV file
+ofdeals import output/output-2025-10-16.csv
+
+# Import multiple CSVs to build historical data
+ofdeals import all-users.csv --list-id all
+ofdeals import paid-users.csv --list-id paid
+ofdeals import trials.csv --list-id trials
+
+# View aggregated data from all imports
+ofdeals stats
+ofdeals deals
+ofdeals history
+
+# Import old data without running analysis
+ofdeals import old-data.csv --no-analyze
+
+# Then analyze everything at once
+ofdeals stats
+ofdeals deals
+```
+
 ### Debugging Issues
 
 ```bash
@@ -624,6 +701,9 @@ ofdeals config
 
 # Verify list IDs
 ofdeals lists
+
+# Debug import with verbose output
+ofdeals -v import data.csv
 ```
 
 ## Tips and Best Practices
@@ -632,11 +712,13 @@ ofdeals lists
 2. **Session Persistence**: Login is saved to `C:\tempchromdir` for future runs
 3. **Multiple Lists**: Run `ofdeals lists` to see all configured lists
 4. **Automation**: Use `--no-analyze` to scrape multiple lists quickly, then analyze in batch
-5. **Troubleshooting**: Use `-v` flag to see detailed debug information
-6. **Scrape Regularly**: Run scraping daily to build good historical price data
-7. **Historical Lows**: Check `ofdeals deals` before subscribing to catch the best prices
-8. **Price Alerts**: Use `ofdeals history` to spot recent discounts
-9. **Custom Queries**: Database is SQLite - use any SQL tool for advanced analysis
+5. **Import Existing Data**: Use `ofdeals import` to migrate your old CSV scrapes into the database
+6. **Build History**: Import multiple old CSVs, then continue scraping to track trends over time
+7. **Troubleshooting**: Use `-v` flag to see detailed debug information
+8. **Scrape Regularly**: Run scraping daily to build good historical price data
+9. **Historical Lows**: Check `ofdeals deals` before subscribing to catch the best prices
+10. **Price Alerts**: Use `ofdeals history` to spot recent discounts
+11. **Custom Queries**: Database is SQLite - use any SQL tool for advanced analysis
 
 ## Exit Codes
 

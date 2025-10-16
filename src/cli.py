@@ -10,6 +10,7 @@ import constants
 import list_scraper
 from analyser import Analyser
 from db_analyser import DatabaseAnalyser
+from database import Database
 
 
 def setup_logging(verbose: bool):
@@ -126,6 +127,146 @@ def analyze(ctx, csv_file):
         sys.exit(1)
     except Exception as e:
         logger.error(f"Analysis failed: {str(e)}", exc_info=ctx.obj.get('verbose', False))
+        sys.exit(1)
+
+
+@cli.command(name='import')
+@click.argument('csv_file', type=click.Path(exists=True))
+@click.option('--db-path', '-d', type=click.Path(), help='Path to database file')
+@click.option('--list-id', '-l', default='imported', help='List ID to associate with import (default: imported)')
+@click.option('--date', type=str, help='Date for import (YYYY-MM-DD format). If not provided, extracts from filename.')
+@click.option('--analyze/--no-analyze', default=True, help='Run analysis after import')
+@click.pass_context
+def import_csv(ctx, csv_file, db_path, list_id, date, analyze):
+    """Import data from a CSV file into the database.
+
+    Converts your existing CSV scrapes into the SQLite database format
+    for historical tracking and advanced analysis.
+
+    CSV file must have columns: username, price, subscription_status, lists
+
+    Date handling:
+    - If --date is not provided, tries to extract from filename (output-YYYY-MM-DD.csv)
+    - Use --date YYYY-MM-DD to manually specify the scrape date
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Importing CSV: {csv_file}")
+
+    try:
+        from datetime import datetime
+
+        # Parse date if provided
+        scraped_at = None
+        if date:
+            try:
+                scraped_at = datetime.strptime(date, '%Y-%m-%d')
+                logger.info(f"Using specified date: {date}")
+            except ValueError:
+                logger.error(f"Invalid date format. Use YYYY-MM-DD (got: {date})")
+                sys.exit(1)
+
+        db_path = Path(db_path) if db_path else None
+        db = Database(db_path)
+
+        # Import the CSV file
+        user_count = db.import_csv(Path(csv_file), list_id, scraped_at=scraped_at)
+        logger.info(f"✓ Successfully imported {user_count} users!")
+
+        # Run analysis if requested
+        if analyze and user_count > 0:
+            logger.info("Running analysis on imported data...")
+            analyser = DatabaseAnalyser(db_path)
+            analyser.analyse_all()
+            analyser.close()
+        else:
+            logger.info("Skipping analysis (--no-analyze flag)")
+
+        db.close()
+
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
+        sys.exit(1)
+    except ValueError as e:
+        logger.error(f"CSV format error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Import failed: {str(e)}", exc_info=ctx.obj.get('verbose', False))
+        sys.exit(1)
+
+
+@cli.command(name='import-folder')
+@click.argument('folder_path', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option('--db-path', '-d', type=click.Path(), help='Path to database file')
+@click.option('--list-id', '-l', default='imported', help='List ID to associate with imports (default: imported)')
+@click.option('--pattern', '-p', default='output-*.csv', help='File pattern to match (default: output-*.csv)')
+@click.option('--analyze/--no-analyze', default=False, help='Run analysis after importing all files')
+@click.pass_context
+def import_folder(ctx, folder_path, db_path, list_id, pattern, analyze):
+    """Import all CSV files from a folder into the database.
+
+    Bulk imports all matching CSV files from a directory, automatically extracting
+    dates from filenames (output-YYYY-MM-DD.csv format).
+
+    By default, imports files matching 'output-*.csv' pattern.
+    Use --pattern to specify a different pattern (e.g., '*.csv', 'data-*.csv').
+    """
+    logger = logging.getLogger(__name__)
+    folder_path = Path(folder_path)
+
+    try:
+        from glob import glob
+
+        # Find all matching CSV files
+        pattern_path = str(folder_path / pattern)
+        csv_files = sorted(glob(pattern_path))
+
+        if not csv_files:
+            logger.warning(f"No files found matching pattern '{pattern}' in {folder_path}")
+            sys.exit(0)
+
+        logger.info(f"Found {len(csv_files)} file(s) to import")
+
+        db_path = Path(db_path) if db_path else None
+        db = Database(db_path)
+
+        total_users = 0
+        failed_files = []
+
+        for i, csv_file in enumerate(csv_files, 1):
+            try:
+                logger.info(f"[{i}/{len(csv_files)}] Importing {Path(csv_file).name}...")
+                user_count = db.import_csv(Path(csv_file), list_id)
+                total_users += user_count
+                logger.info(f"  ✓ Imported {user_count} users")
+            except Exception as e:
+                logger.error(f"  ✗ Failed: {e}")
+                failed_files.append((csv_file, str(e)))
+                continue
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Import Complete!")
+        logger.info(f"  Total files: {len(csv_files)}")
+        logger.info(f"  Successful: {len(csv_files) - len(failed_files)}")
+        logger.info(f"  Failed: {len(failed_files)}")
+        logger.info(f"  Total users: {total_users}")
+        logger.info(f"{'='*60}\n")
+
+        if failed_files:
+            logger.warning("Failed files:")
+            for filename, error in failed_files:
+                logger.warning(f"  - {Path(filename).name}: {error}")
+
+        # Run analysis if requested
+        if analyze:
+            logger.info("Running analysis on all imported data...")
+            analyser = DatabaseAnalyser(db_path)
+            analyser.analyse_all()
+            analyser.close()
+
+        db.close()
+
+    except Exception as e:
+        logger.error(f"Bulk import failed: {str(e)}", exc_info=ctx.obj.get('verbose', False))
         sys.exit(1)
 
 
