@@ -9,6 +9,7 @@ import click
 import constants
 import list_scraper
 from analyser import Analyser
+from db_analyser import DatabaseAnalyser
 
 
 def setup_logging(verbose: bool):
@@ -34,11 +35,16 @@ def cli(ctx, verbose):
 
 @cli.command()
 @click.option('--list-id', '-l', help='OnlyFans list ID to scrape')
-@click.option('--output', '-o', type=click.Path(), help='Output CSV file path')
+@click.option('--output', '-o', type=click.Path(), help='Output path (database or CSV)')
 @click.option('--analyze/--no-analyze', default=True, help='Run analysis after scraping')
+@click.option('--use-csv', is_flag=True, help='Use legacy CSV mode instead of database')
 @click.pass_context
-def scrape(ctx, list_id, output, analyze):
-    """Scrape a OnlyFans list and optionally analyze the results."""
+def scrape(ctx, list_id, output, analyze, use_csv):
+    """Scrape a OnlyFans list and optionally analyze the results.
+
+    By default, data is stored in SQLite database for historical tracking.
+    Use --use-csv for legacy CSV output mode.
+    """
     logger = logging.getLogger(__name__)
     logger.info("===== ONLYFANS DEALS FINDER =====")
 
@@ -46,40 +52,53 @@ def scrape(ctx, list_id, output, analyze):
     target_list = list_id or constants.ALL_LIST
     logger.info(f"Scraping list ID: {target_list}")
 
-    scraper = list_scraper.OnlyFansScraper()
-    try:
-        filename = scraper.scrape_list(target_list)
+    # Determine storage mode
+    use_database = not use_csv
+    storage_mode = "SQLite Database" if use_database else "CSV"
+    logger.info(f"Storage mode: {storage_mode}")
 
-        # Move output file if custom path specified
-        if output:
-            output_path = Path(output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            if os.path.exists(filename):
-                os.rename(filename, output_path)
-                filename = output_path
-                logger.info(f"Moved output to: {filename}")
+    scraper = list_scraper.OnlyFansScraper(
+        use_database=use_database,
+        db_path=Path(output) if (output and use_database) else None
+    )
+
+    try:
+        result_path = scraper.scrape_list(target_list)
 
         # Check if scraping was successful
-        if not os.path.exists(filename):
-            logger.error("CSV file not created. Scraping may have failed.")
-            sys.exit(1)
+        if use_csv:
+            # Legacy CSV mode checks
+            if not os.path.exists(result_path):
+                logger.error("CSV file not created. Scraping may have failed.")
+                sys.exit(1)
 
-        # Check if file has data
-        file_size = os.path.getsize(filename)
-        if file_size < 100:
-            logger.warning("CSV file is empty or has no data. Skipping analysis.")
-            logger.info(f"Output file: {filename}")
-            sys.exit(0)
+            file_size = os.path.getsize(result_path)
+            if file_size < 100:
+                logger.warning("CSV file is empty or has no data. Skipping analysis.")
+                logger.info(f"Output file: {result_path}")
+                sys.exit(0)
 
-        logger.info(f"Scraping successful! Output: {filename}")
+            logger.info(f"Scraping successful! Output: {result_path}")
 
-        # Run analysis if requested
-        if analyze:
-            logger.info("Running analysis...")
-            analyser = Analyser(filename)
-            analyser.analyse_list()
+            # Run CSV analysis
+            if analyze:
+                logger.info("Running analysis...")
+                analyser = Analyser(result_path)
+                analyser.analyse_list()
+            else:
+                logger.info("Skipping analysis (--no-analyze flag)")
         else:
-            logger.info("Skipping analysis (--no-analyze flag)")
+            # Database mode
+            logger.info(f"Scraping successful! Database: {result_path}")
+
+            # Run database analysis
+            if analyze:
+                logger.info("Running analysis...")
+                db_analyser = DatabaseAnalyser(result_path)
+                db_analyser.analyse_all()
+                db_analyser.close()
+            else:
+                logger.info("Skipping analysis (--no-analyze flag)")
 
     except KeyboardInterrupt:
         logger.warning("Interrupted by user")
@@ -95,7 +114,7 @@ def scrape(ctx, list_id, output, analyze):
 @click.argument('csv_file', type=click.Path(exists=True))
 @click.pass_context
 def analyze(ctx, csv_file):
-    """Analyze an existing CSV file from a previous scrape."""
+    """Analyze an existing CSV file from a previous scrape (legacy)."""
     logger = logging.getLogger(__name__)
     logger.info(f"Analyzing {csv_file}...")
 
@@ -107,6 +126,95 @@ def analyze(ctx, csv_file):
         sys.exit(1)
     except Exception as e:
         logger.error(f"Analysis failed: {str(e)}", exc_info=ctx.obj.get('verbose', False))
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--db-path', '-d', type=click.Path(), help='Path to database file')
+@click.pass_context
+def stats(ctx, db_path):
+    """Show database statistics and information."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        db_path = Path(db_path) if db_path else None
+        analyser = DatabaseAnalyser(db_path)
+        analyser.show_stats()
+        analyser.close()
+    except Exception as e:
+        logger.error(f"Error: {str(e)}", exc_info=ctx.obj.get('verbose', False))
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--db-path', '-d', type=click.Path(), help='Path to database file')
+@click.option('--days', default=30, help='Number of days to look back (default: 30)')
+@click.pass_context
+def history(ctx, db_path, days):
+    """Show price changes in the last N days."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        db_path = Path(db_path) if db_path else None
+        analyser = DatabaseAnalyser(db_path)
+        analyser.find_price_changes_recently(days)
+        analyser.close()
+    except Exception as e:
+        logger.error(f"Error: {str(e)}", exc_info=ctx.obj.get('verbose', False))
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--db-path', '-d', type=click.Path(), help='Path to database file')
+@click.pass_context
+def deals(ctx, db_path):
+    """Find users currently at their historical low price."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        db_path = Path(db_path) if db_path else None
+        analyser = DatabaseAnalyser(db_path)
+        analyser.find_historical_lows()
+        analyser.close()
+    except Exception as e:
+        logger.error(f"Error: {str(e)}", exc_info=ctx.obj.get('verbose', False))
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('username')
+@click.option('--db-path', '-d', type=click.Path(), help='Path to database file')
+@click.pass_context
+def user(ctx, username, db_path):
+    """Show price history for a specific user."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        db_path = Path(db_path) if db_path else None
+        analyser = DatabaseAnalyser(db_path)
+        analyser.get_user_history(username)
+        analyser.close()
+    except Exception as e:
+        logger.error(f"Error: {str(e)}", exc_info=ctx.obj.get('verbose', False))
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('output_csv', type=click.Path())
+@click.option('--db-path', '-d', type=click.Path(), help='Path to database file')
+@click.pass_context
+def export(ctx, output_csv, db_path):
+    """Export database to CSV file."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        db_path = Path(db_path) if db_path else None
+        output_path = Path(output_csv)
+        analyser = DatabaseAnalyser(db_path)
+        analyser.export_csv(output_path)
+        analyser.close()
+    except Exception as e:
+        logger.error(f"Error: {str(e)}", exc_info=ctx.obj.get('verbose', False))
         sys.exit(1)
 
 

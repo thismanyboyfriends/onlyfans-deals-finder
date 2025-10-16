@@ -1,0 +1,223 @@
+"""Database-based analyzer with historical price tracking."""
+import logging
+from pathlib import Path
+from typing import Optional, List, Dict
+from datetime import datetime, timedelta
+
+from database import Database
+
+logger = logging.getLogger(__name__)
+
+
+class DatabaseAnalyser:
+    """Analyzes OnlyFans data from SQLite database with historical tracking."""
+
+    def __init__(self, db_path: Optional[Path] = None):
+        """Initialize analyzer with database connection."""
+        self.db = Database(db_path)
+        logger.info(f"Analyzer connected to database: {self.db.db_path}")
+
+    def analyse_all(self):
+        """Run all analysis methods."""
+        logger.info("Running comprehensive analysis...")
+
+        self.show_stats()
+        self.find_free_accounts()
+        self.find_categorization_issues()
+        self.find_price_changes_recently()
+        self.find_historical_lows()
+        self.find_trending_prices()
+
+    def show_stats(self):
+        """Show database statistics."""
+        stats = self.db.get_stats()
+
+        print("\n" + "="*60)
+        print("DATABASE STATISTICS")
+        print("="*60)
+        print(f"Total Users:       {stats['total_users']}")
+        print(f"Total Scrapes:     {stats['total_scrapes']}")
+        print(f"Price Records:     {stats['price_records']}")
+        print(f"Last Scrape:       {stats['last_scrape'] or 'Never'}")
+        print("="*60)
+
+    def find_free_accounts(self):
+        """Find free trial accounts not yet subscribed."""
+        users = self.db.get_users_with_lists()
+
+        free_users = [
+            u for u in users
+            if u['subscription_status'] == 'NO_SUBSCRIPTION'
+            and u['current_price'] == 0.0
+        ]
+
+        if free_users:
+            print("\n" + "="*60)
+            print(f"FREE ACCOUNTS NOT SUBSCRIBED ({len(free_users)})")
+            print("="*60)
+            for user in free_users[:20]:  # Limit to 20
+                lists_str = ', '.join(user['lists'])
+                print(f"https://onlyfans.com/{user['username']}")
+                print(f"  Lists: {lists_str}")
+            if len(free_users) > 20:
+                print(f"\n... and {len(free_users) - 20} more")
+
+    def find_categorization_issues(self):
+        """Find users with incorrect list categorization."""
+        users = self.db.get_users_with_lists()
+
+        issues = []
+
+        for user in users:
+            lists_set = set(user['lists'])
+
+            # Paid user not in 'paid' list
+            if user['current_price'] > 0 and 'paid' not in lists_set:
+                issues.append({
+                    'username': user['username'],
+                    'issue': 'not flagged as paid',
+                    'price': user['current_price'],
+                    'lists': user['lists']
+                })
+
+            # Free user not in 'free' list
+            if user['current_price'] == 0 and 'free' not in lists_set:
+                issues.append({
+                    'username': user['username'],
+                    'issue': 'not flagged as free',
+                    'price': user['current_price'],
+                    'lists': user['lists']
+                })
+
+        if issues:
+            print("\n" + "="*60)
+            print(f"CATEGORIZATION ISSUES ({len(issues)})")
+            print("="*60)
+            for issue in issues[:15]:  # Limit to 15
+                lists_str = ', '.join(issue['lists'])
+                print(f"{issue['issue']}: https://onlyfans.com/{issue['username']}")
+                print(f"  Price: ${issue['price']}, Lists: {lists_str}")
+            if len(issues) > 15:
+                print(f"\n... and {len(issues) - 15} more")
+
+    def find_price_changes_recently(self, days: int = 30):
+        """Find users whose prices changed in the last N days."""
+        changes = self.db.get_price_changes(days)
+
+        if changes:
+            print("\n" + "="*60)
+            print(f"PRICE CHANGES (Last {days} Days) - {len(changes)} changes")
+            print("="*60)
+
+            for change in changes[:15]:  # Limit to 15
+                prev_price = change['prev_price']
+                new_price = change['price']
+                change_date = change['scraped_at']
+
+                arrow = "↓" if new_price < prev_price else "↑"
+                print(f"{arrow} https://onlyfans.com/{change['username']}")
+                print(f"  ${prev_price} → ${new_price} on {change_date}")
+
+            if len(changes) > 15:
+                print(f"\n... and {len(changes) - 15} more")
+
+    def find_historical_lows(self):
+        """Find users currently at their historical low price."""
+        lows = self.db.get_historical_low_prices()
+
+        if lows:
+            print("\n" + "="*60)
+            print(f"HISTORICAL LOW PRICES ({len(lows)})")
+            print("="*60)
+            print("Users currently at their lowest price ever:")
+            print()
+
+            for low in lows[:20]:  # Limit to 20
+                print(f"💰 https://onlyfans.com/{low['username']}")
+                print(f"   Current: ${low['current_price']} (seen {low['scrape_count']} times)")
+
+            if len(lows) > 20:
+                print(f"\n... and {len(lows) - 20} more")
+
+    def find_trending_prices(self):
+        """Find users with consistent price decreases (trending cheaper)."""
+        cursor = self.db.conn.cursor()
+
+        # Get users with at least 3 price records
+        cursor.execute("""
+            WITH price_trends AS (
+                SELECT
+                    username,
+                    price,
+                    scraped_at,
+                    LAG(price, 1) OVER (PARTITION BY username ORDER BY scraped_at) as prev_price,
+                    LAG(price, 2) OVER (PARTITION BY username ORDER BY scraped_at) as prev_price_2
+                FROM price_history
+                WHERE scraped_at >= datetime('now', '-60 days')
+            )
+            SELECT username, prev_price_2, prev_price, price
+            FROM price_trends
+            WHERE prev_price_2 IS NOT NULL
+              AND prev_price < prev_price_2
+              AND price < prev_price
+            GROUP BY username
+            ORDER BY (prev_price_2 - price) DESC
+            LIMIT 20
+        """)
+
+        trends = [dict(row) for row in cursor.fetchall()]
+
+        if trends:
+            print("\n" + "="*60)
+            print(f"TRENDING CHEAPER ({len(trends)})")
+            print("="*60)
+            print("Users with consistently decreasing prices:")
+            print()
+
+            for trend in trends:
+                print(f"📉 https://onlyfans.com/{trend['username']}")
+                print(f"   ${trend['prev_price_2']} → ${trend['prev_price']} → ${trend['price']}")
+
+    def get_user_history(self, username: str):
+        """Get price history for a specific user."""
+        history = self.db.get_price_history(username)
+
+        if history:
+            print(f"\n" + "="*60)
+            print(f"PRICE HISTORY: @{username}")
+            print("="*60)
+
+            for record in history:
+                status = record['subscription_status']
+                date = record['scraped_at']
+                price = record['price']
+                print(f"  {date}: ${price} ({status})")
+        else:
+            print(f"No history found for @{username}")
+
+    def export_csv(self, output_path: Path):
+        """Export current data to CSV for compatibility."""
+        import csv
+
+        users = self.db.get_users_with_lists()
+
+        with open(output_path, 'w', newline='') as csvfile:
+            fieldnames = ['username', 'price', 'subscription_status', 'lists']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for user in users:
+                lists_str = ','.join(user['lists'])
+                writer.writerow({
+                    'username': user['username'],
+                    'price': user['current_price'],
+                    'subscription_status': user['subscription_status'],
+                    'lists': lists_str
+                })
+
+        logger.info(f"Exported {len(users)} users to {output_path}")
+        print(f"\n✓ Exported {len(users)} users to {output_path}")
+
+    def close(self):
+        """Close database connection."""
+        self.db.close()

@@ -17,6 +17,8 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from database import Database
+
 # Constants
 BASE_URL = "https://onlyfans.com/my/collections/user-lists/{}"
 PROFILE_LIST_SELECTOR = "span.b-list-titles__item__text"
@@ -54,10 +56,19 @@ def start_chrome():
 
 
 class OnlyFansScraper:
-    def __init__(self):
+    def __init__(self, use_database: bool = True, db_path: Optional[Path] = None):
+        """Initialize scraper.
+
+        Args:
+            use_database: If True, store data in SQLite. If False, use CSV (legacy).
+            db_path: Path to database file (only used if use_database=True)
+        """
         start_chrome()
         self.driver = self._setup_driver()
         self.seen_users = defaultdict(bool)
+        self.use_database = use_database
+        self.db = Database(db_path) if use_database else None
+        self.current_run_id = None
 
     @staticmethod
     def _setup_driver():
@@ -99,8 +110,12 @@ class OnlyFansScraper:
         self.driver.get(url)
         self.wait_until_page_loads()
 
-        # Create CSV with headers even if we scrape 0 users
-        self.initialize_csv()
+        # Initialize storage (database or CSV)
+        if self.use_database:
+            self.current_run_id = self.db.start_scrape_run(list_id)
+            logging.info(f"Started scrape run #{self.current_run_id} for list {list_id}")
+        else:
+            self.initialize_csv()
 
         # Wait for Vue virtual scroller to initialize
         try:
@@ -118,6 +133,8 @@ class OnlyFansScraper:
             # Check for page errors
             if self.check_for_page_errors():
                 logging.error("Page error couldn't be resolved, stopping scrape")
+                if self.use_database:
+                    self.db.complete_scrape_run(self.current_run_id, len(self.seen_users), 'error')
                 break
 
             old_user_count = len(self.seen_users)
@@ -131,7 +148,11 @@ class OnlyFansScraper:
             # Scrape only NEW visible items (optimization)
             new_elements = self.get_new_user_elements()
             if new_elements:
-                self.write_to_csv(new_elements)
+                if self.use_database:
+                    self.write_to_database(new_elements)
+                else:
+                    self.write_to_csv(new_elements)
+
                 new_user_count = len(self.seen_users)
                 newly_added = new_user_count - old_user_count
                 logging.info(f"Scraped {newly_added} new users ({new_user_count} total)")
@@ -143,11 +164,17 @@ class OnlyFansScraper:
             # Brief rate limiting between scrolls
             time.sleep(1)
 
+        # Complete the scrape
         logging.info(f"Scraping complete. Total users: {len(self.seen_users)}")
-        return output_file
+
+        if self.use_database:
+            self.db.complete_scrape_run(self.current_run_id, len(self.seen_users), 'completed')
+            return self.db.db_path
+        else:
+            return output_file
 
     def initialize_csv(self):
-        """Create CSV file with headers if it doesn't exist"""
+        """Create CSV file with headers if it doesn't exist (legacy mode)"""
         if not os.path.exists(output_file):
             with open(output_file, 'w', newline='') as csvfile:
                 fieldnames = ['username', 'price', 'subscription_status', 'lists']
@@ -155,8 +182,39 @@ class OnlyFansScraper:
                 writer.writeheader()
                 logging.info(f"Created CSV file: {output_file}")
 
+    def write_to_database(self, user_elements):
+        """Write user data to SQLite database with batch processing"""
+        new_users = []
+
+        # Collect all new user data first
+        for user_element in user_elements:
+            user_info = self.scrape_info(user_element)
+            if user_info and not self.seen_users.get(user_info['username']):
+                new_users.append(user_info)
+                self.seen_users[user_info['username']] = True
+
+        # Batch write to database
+        for user in new_users:
+            try:
+                # Convert price string to float
+                try:
+                    price_float = float(user['price']) if user['price'] != '?' else 0.0
+                except ValueError:
+                    price_float = 0.0
+
+                self.db.upsert_user(
+                    username=user['username'],
+                    price=price_float,
+                    subscription_status=user['subscription_status'],
+                    lists=user['lists'],
+                    run_id=self.current_run_id
+                )
+                logging.info(f"Scraped {user['username']}")
+            except Exception as e:
+                logging.error(f"Failed to save {user['username']} to database: {e}")
+
     def write_to_csv(self, user_elements):
-        """Write user data to CSV with batch processing for better performance"""
+        """Write user data to CSV with batch processing (legacy mode)"""
         new_users = []
 
         # Collect all new user data first
@@ -379,7 +437,10 @@ class OnlyFansScraper:
             raise PriceNotFoundError(f"Unable to determine offer type from: '{price_text}'")
 
     def close_driver(self) -> None:
+        """Close browser and database connections."""
         self.driver.quit()
+        if self.db:
+            self.db.close()
 
     @staticmethod
     def standardize_price(price_string: str) -> str:

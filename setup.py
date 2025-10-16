@@ -41,8 +41,8 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "ofscraper=cli:main",
-            "onlyfans-scraper=cli:main",
+            "ofdeals=cli:main",
+            "onlyfans-deals=cli:main",
         ],
     },
     classifiers=[
