@@ -78,22 +78,16 @@ class DatabaseAnalyser:
             print("No free accounts found!")
             print("="*70)
 
-    def _save_free_accounts_to_log(self, accounts: List[Dict], filename: str = "free_accounts.json"):
-        """Save all free accounts to a JSON log file without truncation."""
+    def _save_free_accounts_to_log(self, accounts: List[Dict], filename: str = "free_accounts.txt"):
+        """Save all free accounts to a text file with one URL per line."""
         log_dir = Path("logs")
         log_dir.mkdir(exist_ok=True)
 
         log_file = log_dir / filename
-        timestamp = datetime.now().isoformat()
-
-        report = {
-            "timestamp": timestamp,
-            "total_free_accounts": len(accounts),
-            "accounts": accounts
-        }
 
         with open(log_file, 'w') as f:
-            json.dump(report, f, indent=2)
+            for account in accounts:
+                f.write(account['url'] + '\n')
 
         logger.info(f"Free accounts saved to {log_file}")
         print(f"✓ All free accounts saved to: {log_file}")
