@@ -339,6 +339,73 @@ class Database:
 
         return results
 
+    def get_recent_price_drops(self, run_id: int, baseline_days: int = 30,
+                                discount_threshold: float = 0.20) -> List[Dict]:
+        """Find users with recent price drops below baseline.
+
+        Args:
+            run_id: Latest scrape run ID to check
+            baseline_days: Days to use for baseline average (default 30)
+            discount_threshold: Minimum discount % to highlight (default 0.20 = 20% off)
+
+        Returns:
+            List of users with recent significant price drops
+        """
+        cursor = self.conn.cursor()
+
+        # Get the timestamp of the latest scrape run
+        cursor.execute("""
+            SELECT completed_at FROM scrape_runs WHERE id = ?
+        """, (run_id,))
+        run_row = cursor.fetchone()
+        if not run_row:
+            return []
+
+        latest_scrape_time = run_row['completed_at']
+
+        # Find users with significant recent price drops
+        cursor.execute("""
+            WITH baseline AS (
+                -- Calculate average price from before the latest scrape (excluding latest run)
+                SELECT
+                    username,
+                    AVG(price) as avg_price,
+                    COUNT(*) as price_count
+                FROM price_history
+                WHERE scraped_at < datetime(?, '+1 second')
+                  AND scraped_at >= datetime(?, '-' || ? || ' days')
+                  AND scrape_run_id != ?
+                GROUP BY username
+                HAVING price_count >= 2
+            ),
+            latest_prices AS (
+                -- Get latest prices from the current run
+                SELECT
+                    ph.username,
+                    ph.price as current_price,
+                    ph.scraped_at,
+                    LAG(ph.price) OVER (PARTITION BY ph.username ORDER BY ph.scraped_at DESC) as prev_price
+                FROM price_history ph
+                WHERE ph.scrape_run_id = ?
+            )
+            SELECT
+                lp.username,
+                lp.current_price,
+                b.avg_price,
+                ROUND((1 - (lp.current_price / b.avg_price)) * 100, 1) as discount_percent,
+                b.price_count,
+                CASE WHEN lp.prev_price > lp.current_price THEN 'just dropped' ELSE 'new low' END as reason
+            FROM latest_prices lp
+            JOIN baseline b ON lp.username = b.username
+            WHERE lp.current_price < (b.avg_price * (1 - ?))
+              AND lp.current_price > 0
+              AND b.avg_price > 0
+              AND (lp.prev_price IS NULL OR lp.prev_price > lp.current_price)
+            ORDER BY discount_percent DESC
+        """, (latest_scrape_time, latest_scrape_time, baseline_days, run_id, run_id, discount_threshold))
+
+        return [dict(row) for row in cursor.fetchall()]
+
     def get_stats(self) -> Dict:
         """Get database statistics."""
         cursor = self.conn.cursor()

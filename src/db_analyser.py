@@ -24,9 +24,8 @@ class DatabaseAnalyser:
 
         self.show_stats()
         self.find_free_accounts()  # Primary target - free unsubscribed accounts
+        self.find_recent_price_drops()  # New deals - recently discounted
         self.find_categorization_issues()
-        self.find_historical_lows()
-        self.find_trending_prices()
 
     def show_stats(self):
         """Show database statistics."""
@@ -86,6 +85,55 @@ class DatabaseAnalyser:
             print("No free accounts found!")
             print("="*70)
 
+    def find_recent_price_drops(self):
+        """Find users with recent significant price drops (new good deals)."""
+        # Only check users from the most recent scrape run
+        latest_run_id = self.db.get_latest_scrape_run_id()
+        if not latest_run_id:
+            return
+
+        # Get recent price drops: at least 20% off their 30-day average
+        drops = self.db.get_recent_price_drops(
+            run_id=latest_run_id,
+            baseline_days=30,
+            discount_threshold=0.20  # 20% discount minimum
+        )
+
+        if drops:
+            print("\n" + "="*70)
+            print(f"NEW DEALS - RECENT PRICE DROPS ({len(drops)})")
+            print("="*70)
+            print("Users with significant recent price decreases:")
+            print("(Compared to 30-day average, excluding stale deals)")
+            print()
+
+            for drop in drops[:25]:  # Show top 25
+                username = drop['username']
+                current_price = drop['current_price']
+                avg_price = drop['avg_price']
+                discount = drop['discount_percent']
+                reason = drop['reason']
+
+                print(f"🎉 https://onlyfans.com/{username}")
+                print(f"   ${avg_price:.2f} → ${current_price:.2f} ({discount}% off) [{reason}]")
+
+            if len(drops) > 25:
+                print(f"\n... and {len(drops) - 25} more")
+
+            # Save all deals to log file
+            deals_log = [
+                {
+                    'username': d['username'],
+                    'url': f"https://onlyfans.com/{d['username']}",
+                    'current_price': d['current_price'],
+                    'baseline_price': round(d['avg_price'], 2),
+                    'discount_percent': d['discount_percent'],
+                    'reason': d['reason']
+                }
+                for d in drops
+            ]
+            self._save_deals_to_log(deals_log)
+
     def _save_free_accounts_to_log(self, accounts: List[Dict], filename: str = "free_accounts.txt"):
         """Save all free accounts to a text file with one URL per line."""
         log_dir = Path("logs")
@@ -99,6 +147,26 @@ class DatabaseAnalyser:
 
         logger.info(f"Free accounts saved to {log_file}")
         print(f"✓ All free accounts saved to: {log_file}")
+
+    def _save_deals_to_log(self, deals: List[Dict], filename: str = "recent_deals.json"):
+        """Save all recent deals to a JSON log file."""
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+
+        log_file = log_dir / filename
+        timestamp = datetime.now().isoformat()
+
+        report = {
+            "timestamp": timestamp,
+            "total_deals": len(deals),
+            "deals": deals
+        }
+
+        with open(log_file, 'w') as f:
+            json.dump(report, f, indent=2)
+
+        logger.info(f"Recent deals saved to {log_file}")
+        print(f"✓ All recent deals saved to: {log_file}")
 
     def _save_issues_to_log(self, issues: List[Dict], filename: str = "issues_report.json"):
         """Save all issues to a JSON log file without truncation."""

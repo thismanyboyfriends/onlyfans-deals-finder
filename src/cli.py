@@ -147,6 +147,23 @@ def user(ctx, username, db_path):
         sys.exit(1)
 
 @cli.command()
+@click.option('--db-path', '-d', type=click.Path(), help='Path to database file')
+@click.pass_context
+def new_deals(ctx, db_path):
+    """Find users with recent significant price drops (new good deals)."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        db_path = Path(db_path) if db_path else None
+        analyser = DatabaseAnalyser(db_path)
+        analyser.find_recent_price_drops()
+        analyser.close()
+    except Exception as e:
+        logger.error(f"Error: {str(e)}", exc_info=ctx.obj.get('verbose', False))
+        sys.exit(1)
+
+
+@cli.command()
 @click.option('--chrome-path', help='Path to Chrome executable',
               default=r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 @click.option('--user-data-dir', help='Chrome user data directory',

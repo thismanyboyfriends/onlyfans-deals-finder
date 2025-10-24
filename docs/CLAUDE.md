@@ -31,18 +31,20 @@ OnlyFans Deals Finder is a Python CLI tool that automates collection and analysi
 - `DatabaseAnalyser` class performs historical analysis
 - Key analysis methods:
   - `find_free_accounts()` - Free/trial accounts not yet subscribed (primary target)
+  - `find_recent_price_drops()` - Users with significant recent price drops (20%+ off baseline)
   - `find_historical_lows()` - Users currently at lowest price ever seen
   - `find_price_changes_recently()` - Price changes over specified days
   - `find_categorization_issues()` - Missing or inconsistent list tags
   - `find_trending_prices()` - Recent price trend analysis
 - Reports only show users from the most recent scrape run
 - Logs detailed findings to JSON files for tracking
+- Recent price drops compares current price to 30-day average (excluding stale deals)
 
 **cli.py** - Click-based command-line interface
 - Entry point: `main()` function
-- Commands: `scrape`, `stats`, `deals`, `history`, `user`, `lists`, `config`
+- Commands: `scrape`, `stats`, `deals`, `new-deals`, `history`, `user`, `config`
 - Global options: `-v/--verbose` for debug logging
-- All commands support `--db-path` for custom database location
+- All data commands support `--db-path` for custom database location
 
 ### Data Flow
 
@@ -77,6 +79,13 @@ OnlyFans Deals Finder is a Python CLI tool that automates collection and analysi
 - `SUBSCRIBED` - Currently subscribed
 - `RENEWAL` - Approaching renewal (for deals detection)
 
+**Recent Price Drops Analysis**:
+- Compares current price to 30-day rolling average
+- Only highlights prices at least 20% below average
+- Filters out stale deals (prices that have been low for weeks)
+- Only shows if price recently changed (in last 1-2 scrapes)
+- Results saved to `logs/recent_deals.json` for tracking
+
 ## Development Commands
 
 ### Setup and Installation
@@ -101,10 +110,10 @@ ofdeals -v scrape --list-id 123         # Verbose output
 ### View Results
 ```bash
 ofdeals stats                           # Database statistics
+ofdeals new-deals                       # Recent price drops (new good deals)
 ofdeals deals                           # Historical low prices
 ofdeals history --days 7                # Last 7 days of changes
 ofdeals user USERNAME                   # Single user history
-ofdeals lists                           # All configured lists
 ofdeals config                          # Show Chrome/paths config
 ```
 
