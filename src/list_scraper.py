@@ -339,8 +339,19 @@ class OnlyFansScraper:
 
     @staticmethod
     def get_price(price_text: str, offer: str) -> str:
-        if offer in ("FREE", "FREE_TRIAL", "SUBSCRIBED"):
+        if offer in ("FREE", "FREE_TRIAL"):
             price = "$0"
+        elif offer == "SUBSCRIBED":
+            # Extract renewal price for subscribed users (e.g., "renew $15 per month")
+            parts = price_text.split()
+            price = None
+            for part in parts:
+                if '$' in part:
+                    price = part
+                    break
+            if price is None:
+                # Fallback if no price found
+                price = "$0"
         elif offer == "NO_OFFER":
             parts = price_text.split()
             if len(parts) < 2:

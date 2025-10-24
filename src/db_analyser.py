@@ -138,6 +138,7 @@ class DatabaseAnalyser:
             if user['current_price'] > 0 and 'paid' not in lists_set:
                 issues.append({
                     'username': user['username'],
+                    'url': f"https://onlyfans.com/{user['username']}",
                     'issue': 'not flagged as paid',
                     'price': user['current_price'],
                     'lists': user['lists']
@@ -147,6 +148,7 @@ class DatabaseAnalyser:
             if user['current_price'] == 0 and 'free' not in lists_set:
                 issues.append({
                     'username': user['username'],
+                    'url': f"https://onlyfans.com/{user['username']}",
                     'issue': 'not flagged as free',
                     'price': user['current_price'],
                     'lists': user['lists']
