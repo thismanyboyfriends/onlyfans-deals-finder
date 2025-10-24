@@ -190,14 +190,19 @@ class DatabaseAnalyser:
                 print(f"\n... and {len(changes) - 15} more")
 
     def find_historical_lows(self):
-        """Find users currently at their historical low price."""
-        lows = self.db.get_historical_low_prices()
+        """Find users from the latest scrape currently at their historical low price."""
+        # Only check users from the most recent scrape run
+        latest_run_id = self.db.get_latest_scrape_run_id()
+        if not latest_run_id:
+            return
+
+        lows = self.db.get_historical_low_prices(latest_run_id)
 
         if lows:
             print("\n" + "="*60)
             print(f"HISTORICAL LOW PRICES ({len(lows)})")
             print("="*60)
-            print("Users currently at their lowest price ever:")
+            print("Users at their lowest price ever (from this scrape):")
             print()
 
             for low in lows[:20]:  # Limit to 20

@@ -239,22 +239,45 @@ class Database:
 
         return [dict(row) for row in cursor.fetchall()]
 
-    def get_historical_low_prices(self) -> List[Dict]:
-        """Get users currently at their historical low price."""
+    def get_historical_low_prices(self, run_id: Optional[int] = None) -> List[Dict]:
+        """Get users currently at their historical low price.
+
+        Args:
+            run_id: Optional scrape run ID to filter users from that run only
+        """
         cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT
-                u.username,
-                u.current_price,
-                MIN(ph.price) as historical_low,
-                COUNT(DISTINCT ph.scrape_run_id) as scrape_count
-            FROM users u
-            JOIN price_history ph ON u.username = ph.username
-            WHERE u.subscription_status = 'NO_SUBSCRIPTION'
-            GROUP BY u.username
-            HAVING u.current_price = historical_low AND scrape_count > 1
-            ORDER BY u.current_price
-        """)
+
+        if run_id:
+            # Filter to only users from the specified scrape run
+            cursor.execute("""
+                SELECT
+                    u.username,
+                    u.current_price,
+                    MIN(ph.price) as historical_low,
+                    COUNT(DISTINCT ph.scrape_run_id) as scrape_count
+                FROM users u
+                JOIN price_history ph ON u.username = ph.username
+                WHERE u.subscription_status = 'NO_SUBSCRIPTION'
+                  AND u.last_scraped_run_id = ?
+                GROUP BY u.username
+                HAVING u.current_price = historical_low AND scrape_count > 1
+                ORDER BY u.current_price
+            """, (run_id,))
+        else:
+            # Get all users at historical low (original behavior)
+            cursor.execute("""
+                SELECT
+                    u.username,
+                    u.current_price,
+                    MIN(ph.price) as historical_low,
+                    COUNT(DISTINCT ph.scrape_run_id) as scrape_count
+                FROM users u
+                JOIN price_history ph ON u.username = ph.username
+                WHERE u.subscription_status = 'NO_SUBSCRIPTION'
+                GROUP BY u.username
+                HAVING u.current_price = historical_low AND scrape_count > 1
+                ORDER BY u.current_price
+            """)
 
         return [dict(row) for row in cursor.fetchall()]
 
