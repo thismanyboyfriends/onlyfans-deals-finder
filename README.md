@@ -44,13 +44,34 @@ pip install -e .
 
 ### Chrome Configuration
 
-The scraper requires Chrome to run in remote debugging mode with a persistent user profile:
+The scraper requires Chrome to run in remote debugging mode with a persistent user profile to maintain your OnlyFans login session.
 
-#### First-Time Setup
+#### Authentication & First-Time Setup
 
 1. **The scraper will automatically start Chrome** with the correct settings
 2. **On first run**, you'll need to manually log into OnlyFans in the Chrome window that opens
-3. **Chrome will remember your login** for future scraper runs
+3. **Chrome will store credentials locally** in the user data directory (not transmitted anywhere)
+4. **Chrome will remember your login** for future scraper runs - no need to log in again
+5. Your credentials are stored only on your machine in the Chrome profile directory
+
+#### Configuring Chrome Path
+
+By default, the scraper looks for Chrome in standard locations:
+- **Windows**: `C:\Program Files\Google\Chrome\Application\chrome.exe`
+- **macOS/Linux**: `/usr/bin/google-chrome`
+
+If Chrome is installed elsewhere, set environment variables:
+
+```bash
+export CHROME_PATH="/path/to/chrome"
+export USER_DATA_DIR="/path/to/user/data"
+export CHROME_DEBUG_PORT="9222"  # Optional, defaults to 9222
+```
+
+Then run the scraper:
+```bash
+ofdeals scrape
+```
 
 ## Usage
 
@@ -67,36 +88,30 @@ This makes the `ofdeals` and `onlyfans-deals` commands available globally.
 ### Quick Start
 
 ```bash
-# Scrape data (uses database by default)
+# Scrape data and analyze (automatic)
 ofdeals scrape
 
-# View statistics
-ofdeals stats
+# View recent good deals from latest scrape
+ofdeals new-deals
 
-# Find users at historical low prices
-ofdeals deals
-
-# Check price history
+# Check price history over time
 ofdeals history
 
-# View configuration
-ofdeals config
-
-# Show all configured lists
-ofdeals lists
+# View database statistics
+ofdeals stats
 ```
 
 ### Available Commands
 
 | Command | Description |
 |---------|-------------|
-| `ofdeals scrape` | Scrape list and store in database |
+| `ofdeals scrape` | Scrape list, store in database, and analyze |
+| `ofdeals new-deals` | Find users with recent price drops (>20% off baseline) |
 | `ofdeals stats` | Show database statistics |
-| `ofdeals deals` | Find users at historical low prices 💰 |
-| `ofdeals history` | Show recent price changes |
-| `ofdeals user USERNAME` | Show user's price history |
-| `ofdeals lists` | Show all configured list IDs |
-| `ofdeals config` | Show current configuration |
+| `ofdeals history` | Show recent price changes over N days |
+| `ofdeals user USERNAME` | Show complete price history for a user |
+| `ofdeals deals` | Find users at their historical low price |
+| `ofdeals config` | Show Chrome configuration |
 
 ### Global Options
 

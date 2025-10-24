@@ -2,6 +2,7 @@ import logging
 import time
 import re
 import socket
+import os
 from collections import defaultdict
 from typing import Optional, Dict, List
 from pathlib import Path
@@ -15,6 +16,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from database import Database
+import subprocess
 
 # Constants
 BASE_URL = "https://onlyfans.com/my/collections/user-lists/{}"
@@ -26,11 +28,17 @@ AVATAR_SELECTOR = "a.g-avatar img"
 DISPLAY_NAME_SELECTOR = "div.g-user-name"
 LIST_SELECTOR = "span.b-list-titles__item__text"
 
+# Chrome configuration - read from environment variables with platform-specific defaults
+if os.name == 'nt':  # Windows
+    DEFAULT_CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    DEFAULT_USER_DATA_DIR = r"C:\tempchromdir"
+else:  # macOS/Linux
+    DEFAULT_CHROME_PATH = "/usr/bin/google-chrome"  # Common Linux path
+    DEFAULT_USER_DATA_DIR = os.path.expanduser("~/.config/onlyfans-deals-finder")
 
-CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-DEBUGGING_PORT = "9222"
-USER_DATA_DIR = r"C:\tempchromdir"
-import subprocess
+CHROME_PATH = os.getenv("CHROME_PATH", DEFAULT_CHROME_PATH)
+USER_DATA_DIR = os.getenv("USER_DATA_DIR", DEFAULT_USER_DATA_DIR)
+DEBUGGING_PORT = os.getenv("CHROME_DEBUG_PORT", "9222")
 
 class PriceNotFoundError(Exception):
     pass
