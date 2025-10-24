@@ -1,1 +1,0 @@
-C:\chrome-win64\chrome.exe --remote-debugging-port=9222 --user-data-dir=C:\tempchromdir
