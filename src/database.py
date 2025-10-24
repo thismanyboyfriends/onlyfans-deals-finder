@@ -278,6 +278,41 @@ class Database:
 
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_latest_scrape_run_id(self) -> Optional[int]:
+        """Get the ID of the most recent completed scrape run."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT id FROM scrape_runs
+            WHERE status = 'completed'
+            ORDER BY completed_at DESC LIMIT 1
+        """)
+        result = cursor.fetchone()
+        return result['id'] if result else None
+
+    def get_users_from_scrape_run(self, run_id: int) -> List[Dict]:
+        """Get users that appeared in a specific scrape run with their lists from that run."""
+        cursor = self.conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                u.username,
+                u.current_price,
+                u.subscription_status,
+                GROUP_CONCAT(ul.list_name) as lists
+            FROM users u
+            LEFT JOIN user_lists ul ON u.username = ul.username AND ul.scrape_run_id = ?
+            WHERE u.last_scraped_run_id = ?
+            GROUP BY u.username
+        """, (run_id, run_id))
+
+        results = []
+        for row in cursor.fetchall():
+            data = dict(row)
+            data['lists'] = data['lists'].split(',') if data['lists'] else []
+            results.append(data)
+
+        return results
+
     def get_users_with_lists(self, active_only: bool = True) -> List[Dict]:
         """Get all users with their current lists."""
         cursor = self.conn.cursor()

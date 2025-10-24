@@ -43,7 +43,15 @@ class DatabaseAnalyser:
 
     def find_free_accounts(self):
         """Find free trial accounts not yet subscribed - PRIMARY TARGET."""
-        users = self.db.get_users_with_lists()
+        # Only show users from the most recent scrape run
+        latest_run_id = self.db.get_latest_scrape_run_id()
+        if not latest_run_id:
+            print("\n" + "="*70)
+            print("No completed scrape runs found!")
+            print("="*70)
+            return
+
+        users = self.db.get_users_from_scrape_run(latest_run_id)
 
         free_users = [
             u for u in users
@@ -53,7 +61,7 @@ class DatabaseAnalyser:
 
         if free_users:
             print("\n" + "="*70)
-            print("🎯 PRIMARY TARGET: FREE ACCOUNTS YOU'RE NOT SUBSCRIBED TO 🎯")
+            print("FREE ACCOUNTS YOU'RE NOT SUBSCRIBED TO")
             print(f"Total: {len(free_users)} free trial accounts")
             print("="*70)
             for user in free_users:  # Show all free accounts
@@ -113,8 +121,13 @@ class DatabaseAnalyser:
         print(f"✓ Full issues report saved to: {log_file}")
 
     def find_categorization_issues(self):
-        """Find users with incorrect list categorization."""
-        users = self.db.get_users_with_lists()
+        """Find users with incorrect list categorization from the most recent scrape."""
+        # Only check users from the most recent scrape run
+        latest_run_id = self.db.get_latest_scrape_run_id()
+        if not latest_run_id:
+            return
+
+        users = self.db.get_users_from_scrape_run(latest_run_id)
 
         issues = []
 
