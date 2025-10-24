@@ -1,5 +1,6 @@
 """Database-based analyzer with historical price tracking."""
 import logging
+import json
 from pathlib import Path
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
@@ -22,9 +23,8 @@ class DatabaseAnalyser:
         logger.info("Running comprehensive analysis...")
 
         self.show_stats()
-        self.find_free_accounts()
+        self.find_free_accounts()  # Primary target - free unsubscribed accounts
         self.find_categorization_issues()
-        self.find_price_changes_recently()
         self.find_historical_lows()
         self.find_trending_prices()
 
@@ -42,7 +42,7 @@ class DatabaseAnalyser:
         print("="*60)
 
     def find_free_accounts(self):
-        """Find free trial accounts not yet subscribed."""
+        """Find free trial accounts not yet subscribed - PRIMARY TARGET."""
         users = self.db.get_users_with_lists()
 
         free_users = [
@@ -52,15 +52,71 @@ class DatabaseAnalyser:
         ]
 
         if free_users:
-            print("\n" + "="*60)
-            print(f"FREE ACCOUNTS NOT SUBSCRIBED ({len(free_users)})")
-            print("="*60)
-            for user in free_users[:20]:  # Limit to 20
-                lists_str = ', '.join(user['lists'])
-                print(f"https://onlyfans.com/{user['username']}")
-                print(f"  Lists: {lists_str}")
-            if len(free_users) > 20:
-                print(f"\n... and {len(free_users) - 20} more")
+            print("\n" + "="*70)
+            print("🎯 PRIMARY TARGET: FREE ACCOUNTS YOU'RE NOT SUBSCRIBED TO 🎯")
+            print(f"Total: {len(free_users)} free trial accounts")
+            print("="*70)
+            for user in free_users:  # Show all free accounts
+                lists_str = ', '.join(user['lists']) if user['lists'] else 'No lists'
+                print(f"  ✓ https://onlyfans.com/{user['username']}")
+                print(f"    Lists: {lists_str}")
+            print("="*70)
+
+            # Save all free accounts to log file
+            free_accounts_log = [
+                {
+                    'username': u['username'],
+                    'url': f"https://onlyfans.com/{u['username']}",
+                    'price': u['current_price'],
+                    'lists': u['lists']
+                }
+                for u in free_users
+            ]
+            self._save_free_accounts_to_log(free_accounts_log)
+        else:
+            print("\n" + "="*70)
+            print("No free accounts found!")
+            print("="*70)
+
+    def _save_free_accounts_to_log(self, accounts: List[Dict], filename: str = "free_accounts.json"):
+        """Save all free accounts to a JSON log file without truncation."""
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+
+        log_file = log_dir / filename
+        timestamp = datetime.now().isoformat()
+
+        report = {
+            "timestamp": timestamp,
+            "total_free_accounts": len(accounts),
+            "accounts": accounts
+        }
+
+        with open(log_file, 'w') as f:
+            json.dump(report, f, indent=2)
+
+        logger.info(f"Free accounts saved to {log_file}")
+        print(f"✓ All free accounts saved to: {log_file}")
+
+    def _save_issues_to_log(self, issues: List[Dict], filename: str = "issues_report.json"):
+        """Save all issues to a JSON log file without truncation."""
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+
+        log_file = log_dir / filename
+        timestamp = datetime.now().isoformat()
+
+        report = {
+            "timestamp": timestamp,
+            "total_issues": len(issues),
+            "issues": issues
+        }
+
+        with open(log_file, 'w') as f:
+            json.dump(report, f, indent=2)
+
+        logger.info(f"Issues saved to {log_file}")
+        print(f"✓ Full issues report saved to: {log_file}")
 
     def find_categorization_issues(self):
         """Find users with incorrect list categorization."""
@@ -93,12 +149,15 @@ class DatabaseAnalyser:
             print("\n" + "="*60)
             print(f"CATEGORIZATION ISSUES ({len(issues)})")
             print("="*60)
-            for issue in issues[:15]:  # Limit to 15
+            for issue in issues[:15]:  # Show first 15 in console
                 lists_str = ', '.join(issue['lists'])
                 print(f"{issue['issue']}: https://onlyfans.com/{issue['username']}")
                 print(f"  Price: ${issue['price']}, Lists: {lists_str}")
             if len(issues) > 15:
-                print(f"\n... and {len(issues) - 15} more")
+                print(f"... and {len(issues) - 15} more (see logs/issues_report.json for full list)")
+
+            # Save all issues to log file without truncation
+            self._save_issues_to_log(issues)
 
     def find_price_changes_recently(self, days: int = 30):
         """Find users whose prices changed in the last N days."""
