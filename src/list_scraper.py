@@ -1,6 +1,7 @@
 import logging
 import time
 import re
+import socket
 from collections import defaultdict
 from typing import Optional, Dict, List
 from pathlib import Path
@@ -34,15 +35,56 @@ import subprocess
 class PriceNotFoundError(Exception):
     pass
 
+# Global reference to Chrome process for cleanup
+_chrome_process = None
+
 def start_chrome():
+    """Start a Chrome process for remote debugging, or reuse existing."""
+    global _chrome_process
+
+    # Check if a Chrome process is already running on the debugging port
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+    result = sock.connect_ex(("localhost", int(DEBUGGING_PORT)))
+    sock.close()
+
+    if result == 0:
+        logging.info(f"Connected to existing Chrome process on port {DEBUGGING_PORT}")
+        return  # Already running, don't start a new one
+
+    logging.info("No existing Chrome process found, starting new one...")
+
     command = [
         CHROME_PATH,
         f"--remote-debugging-port={DEBUGGING_PORT}",
         f"--user-data-dir={USER_DATA_DIR}"
     ]
 
-    subprocess.Popen(command)
-    time.sleep(3)  # Wait for Chrome to start
+    try:
+        _chrome_process = subprocess.Popen(command)
+        logging.info(f"Started new Chrome process (PID: {_chrome_process.pid})")
+        time.sleep(3)  # Wait for Chrome to start
+    except Exception as e:
+        logging.error(f"Failed to start Chrome: {e}")
+        raise
+
+def close_chrome():
+    """Close the Chrome process if we started it."""
+    global _chrome_process
+
+    if _chrome_process:
+        try:
+            _chrome_process.terminate()
+            _chrome_process.wait(timeout=5)
+            logging.info("Chrome process closed")
+        except Exception as e:
+            logging.warning(f"Failed to close Chrome gracefully: {e}")
+            try:
+                _chrome_process.kill()
+                logging.info("Chrome process killed")
+            except Exception:
+                pass
+        _chrome_process = None
 
 
 class OnlyFansScraper:
@@ -389,6 +431,7 @@ class OnlyFansScraper:
     def close_driver(self) -> None:
         """Close browser and database connections."""
         self.driver.quit()
+        close_chrome()  # Clean up Chrome process
         if self.db:
             self.db.close()
 
