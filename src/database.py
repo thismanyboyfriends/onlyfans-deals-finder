@@ -80,17 +80,13 @@ class Database:
             )
         """)
 
-        # Lists table - tracks which lists users appear in
+        # Lists table - tracks which lists users currently appear in
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_lists (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 list_name TEXT NOT NULL,
-                added_at TIMESTAMP NOT NULL,
-                removed_at TIMESTAMP,
-                scrape_run_id INTEGER NOT NULL,
-                FOREIGN KEY (username) REFERENCES users(username),
-                FOREIGN KEY (scrape_run_id) REFERENCES scrape_runs(id)
+                FOREIGN KEY (username) REFERENCES users(username)
             )
         """)
 
@@ -199,32 +195,16 @@ class Database:
 
     def _update_user_lists(self, cursor, username: str, current_lists: List[str],
                            run_id: int, now: datetime):
-        """Update which lists a user belongs to."""
-        # Get currently active lists for this user
-        cursor.execute("""
-            SELECT list_name FROM user_lists
-            WHERE username = ? AND removed_at IS NULL
-        """, (username,))
+        """Update which lists a user belongs to (replaces previous lists)."""
+        # Delete all existing lists for this user
+        cursor.execute("DELETE FROM user_lists WHERE username = ?", (username,))
 
-        existing_lists = {row['list_name'] for row in cursor.fetchall()}
-        new_lists = set(current_lists)
-
-        # Lists to add
-        to_add = new_lists - existing_lists
-        for list_name in to_add:
+        # Insert new lists
+        for list_name in current_lists:
             cursor.execute("""
-                INSERT INTO user_lists (username, list_name, added_at, scrape_run_id)
-                VALUES (?, ?, ?, ?)
-            """, (username, list_name, now, run_id))
-
-        # Lists to remove (mark as removed)
-        to_remove = existing_lists - new_lists
-        for list_name in to_remove:
-            cursor.execute("""
-                UPDATE user_lists
-                SET removed_at = ?
-                WHERE username = ? AND list_name = ? AND removed_at IS NULL
-            """, (now, username, list_name))
+                INSERT INTO user_lists (username, list_name)
+                VALUES (?, ?)
+            """, (username, list_name))
 
     def get_price_history(self, username: str) -> List[Dict]:
         """Get price history for a user."""
@@ -290,7 +270,7 @@ class Database:
         return result['id'] if result else None
 
     def get_users_from_scrape_run(self, run_id: int) -> List[Dict]:
-        """Get users that appeared in a specific scrape run with their lists from that run."""
+        """Get users that appeared in a specific scrape run with their current lists."""
         cursor = self.conn.cursor()
 
         cursor.execute("""
@@ -300,10 +280,10 @@ class Database:
                 u.subscription_status,
                 GROUP_CONCAT(ul.list_name) as lists
             FROM users u
-            LEFT JOIN user_lists ul ON u.username = ul.username AND ul.scrape_run_id = ?
+            LEFT JOIN user_lists ul ON u.username = ul.username
             WHERE u.last_scraped_run_id = ?
             GROUP BY u.username
-        """, (run_id, run_id))
+        """, (run_id,))
 
         results = []
         for row in cursor.fetchall():
@@ -313,20 +293,18 @@ class Database:
 
         return results
 
-    def get_users_with_lists(self, active_only: bool = True) -> List[Dict]:
+    def get_users_with_lists(self) -> List[Dict]:
         """Get all users with their current lists."""
         cursor = self.conn.cursor()
 
-        removed_clause = "AND ul.removed_at IS NULL" if active_only else ""
-
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT
                 u.username,
                 u.current_price,
                 u.subscription_status,
                 GROUP_CONCAT(ul.list_name) as lists
             FROM users u
-            LEFT JOIN user_lists ul ON u.username = ul.username {removed_clause}
+            LEFT JOIN user_lists ul ON u.username = ul.username
             GROUP BY u.username
         """)
 
